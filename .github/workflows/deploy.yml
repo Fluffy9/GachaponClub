@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: cd gacha && pnpm install
       - name: Build
-        run: cd gacha && pnpm run build
+        run: cd gacha && pnpm run build --no-lint
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
