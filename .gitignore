@@ -6,7 +6,6 @@ evm
 # Build outputs
 dist
 build
-*.move
 
 # Environment files
 .env
