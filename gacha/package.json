@@ -1,0 +1,47 @@
+{
+  "name": "gacha",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mysten/dapp-kit": "^0.16.3",
+    "@mysten/sui": "^1.28.2",
+    "@rainbow-me/rainbowkit": "^2.2.4",
+    "@suiet/wallet-kit": "^0.4.1",
+    "@tanstack/react-query": "^5.75.5",
+    "@types/node": "^22.15.18",
+    "e": "^0.2.33",
+    "framer-motion": "^12.10.1",
+    "lucide-react": "^0.508.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.5.3",
+    "sonner": "^2.0.3",
+    "viem": "2.x",
+    "wagmi": "^2.15.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/postcss-load-config": "^3.0.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "tsx": "^4.19.4",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.30.1",
+    "vite": "^6.3.5"
+  }
+}

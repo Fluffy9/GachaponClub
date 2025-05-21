@@ -1,0 +1,197 @@
+/// Module: machine
+/// Implements the Gacha machine functionality.
+/// Allows users to mint NFTs in exchange for SUI tokens, with different tiers requiring different payment amounts.
+/// Tracks total plays and rewards, maintains a treasury, and supports multiple MinterCaps.
+#[test_only]
+#[ignore]
+#[allow(unused_use, lint(coin_field))]
+module gacha::machine_old {
+    use sui::coin::{Self, Coin};
+    use sui::sui::SUI;
+    use sui::vec_set::{Self, VecSet};
+    use std::string::{Self, String};
+    use gacha::gacha_nft::{Self, MinterCap, CommonGachaNFT, RareGachaNFT, EpicGachaNFT};
+
+    /// Admin capability for managing the machine
+    public struct AdminCap has key, store {
+        id: UID
+    }
+
+    /// Machine state: Tracks authorized MinterCaps, treasury, and stats
+    public struct Machine has key, store {
+        id: UID,
+        total_plays: u64,              // Total number of mints
+        total_rewards: u64,            // Total reward points (e.g., 1 for Common, 2 for Rare, 3 for Epic)
+        authorized_minter_caps: VecSet<ID>, // List of authorized MinterCap IDs
+        treasury: Coin<SUI>,           // Accumulated payments
+    }
+
+    /// Pricing constants (in MIST, where 1 SUI = 10^9 MIST)
+    const COMMON_PRICE: u64 = 1_000_000_000;  // 1 SUI
+    const RARE_PRICE: u64 = 5_000_000_000;    // 5 SUI
+    const EPIC_PRICE: u64 = 10_000_000_000;   // 10 SUI
+
+    /// Error codes
+    const EInsufficientPayment: u64 = 0;
+    const EUnauthorizedMinterCap: u64 = 1;
+    const EInsufficientTreasury: u64 = 2;
+
+    /// Initialize the machine: Create AdminCap and shared Machine
+    fun init(ctx: &mut TxContext) {
+        let admin_cap = AdminCap { id: object::new(ctx) };
+        transfer::public_transfer(admin_cap, tx_context::sender(ctx));
+
+        let machine = Machine {
+            id: object::new(ctx),
+            total_plays: 0,
+            total_rewards: 0,
+            authorized_minter_caps: vec_set::empty(),
+            treasury: coin::zero<SUI>(ctx),
+        };
+        transfer::public_share_object(machine);
+    }
+
+    /// Setup function for tests to initialize the machine
+    #[test_only]
+    public fun setup(ctx: &mut TxContext) {
+        let admin_cap = AdminCap { id: object::new(ctx) };
+        transfer::public_transfer(admin_cap, tx_context::sender(ctx));
+
+        let machine = Machine {
+            id: object::new(ctx),
+            total_plays: 0,
+            total_rewards: 0,
+            authorized_minter_caps: vec_set::empty(),
+            treasury: coin::zero<SUI>(ctx),
+        };
+        transfer::public_share_object(machine);
+    }
+
+    /// Admin: Register a new MinterCap
+    public fun register_minter_cap(
+        _admin_cap: &AdminCap,
+        minter_cap: MinterCap,
+        machine: &mut Machine,
+        _ctx: &mut TxContext
+    ): MinterCap {
+        let id = gacha_nft::get_minter_cap_id(&minter_cap);
+        vec_set::insert(&mut machine.authorized_minter_caps, id);
+        minter_cap
+    }
+
+    /// Mint a Common NFT by paying the price
+    public fun mint_common(
+        machine: &mut Machine,
+        minter_cap: &MinterCap,
+        payment: Coin<SUI>,
+        name: String,
+        image_url: String,
+        ctx: &mut TxContext
+    ): CommonGachaNFT {
+        assert!(vec_set::contains(&machine.authorized_minter_caps, &gacha_nft::get_minter_cap_id(minter_cap)), EUnauthorizedMinterCap);
+        assert!(coin::value(&payment) >= COMMON_PRICE, EInsufficientPayment);
+
+        machine.total_plays = machine.total_plays + 1;
+        machine.total_rewards = machine.total_rewards + 1;
+        coin::join(&mut machine.treasury, payment);
+
+        gacha_nft::mint_common(minter_cap, name, image_url, ctx)
+    }
+
+    /// Mint a Rare NFT by paying the price
+    public fun mint_rare(
+        machine: &mut Machine,
+        minter_cap: &MinterCap,
+        payment: Coin<SUI>,
+        name: String,
+        image_url: String,
+        ctx: &mut TxContext
+    ): RareGachaNFT {
+        assert!(vec_set::contains(&machine.authorized_minter_caps, &gacha_nft::get_minter_cap_id(minter_cap)), EUnauthorizedMinterCap);
+        assert!(coin::value(&payment) >= RARE_PRICE, EInsufficientPayment);
+
+        machine.total_plays = machine.total_plays + 1;
+        machine.total_rewards = machine.total_rewards + 2;
+        coin::join(&mut machine.treasury, payment);
+
+        gacha_nft::mint_rare(minter_cap, name, image_url, ctx)
+    }
+
+    /// Mint an Epic NFT by paying the price
+    public fun mint_epic(
+        machine: &mut Machine,
+        minter_cap: &MinterCap,
+        payment: Coin<SUI>,
+        name: String,
+        image_url: String,
+        ctx: &mut TxContext
+    ): EpicGachaNFT {
+        assert!(vec_set::contains(&machine.authorized_minter_caps, &gacha_nft::get_minter_cap_id(minter_cap)), EUnauthorizedMinterCap);
+        assert!(coin::value(&payment) >= EPIC_PRICE, EInsufficientPayment);
+
+        machine.total_plays = machine.total_plays + 1;
+        machine.total_rewards = machine.total_rewards + 3;
+        coin::join(&mut machine.treasury, payment);
+
+        gacha_nft::mint_epic(minter_cap, name, image_url, ctx)
+    }
+
+    /// Admin: Withdraw funds from the treasury
+    public fun withdraw(
+        _admin_cap: &AdminCap,
+        machine: &mut Machine,
+        amount: u64,
+        ctx: &mut TxContext
+    ): Coin<SUI> {
+        assert!(coin::value(&machine.treasury) >= amount, EInsufficientTreasury);
+        coin::split(&mut machine.treasury, amount, ctx)
+    }
+
+    /// Redeem a Common NFT for a reward (example: return some SUI)
+    public fun redeem_common(
+        machine: &mut Machine,
+        nft: CommonGachaNFT,
+        ctx: &mut TxContext
+    ): Coin<SUI> {
+        let id = gacha_nft::burn_common(nft);
+        object::delete(id);
+        coin::split(&mut machine.treasury, 100_000_000, ctx) // Example: 0.1 SUI reward
+    }
+
+    /// Redeem a Rare NFT
+    public fun redeem_rare(
+        machine: &mut Machine,
+        nft: RareGachaNFT,
+        ctx: &mut TxContext
+    ): Coin<SUI> {
+        let id = gacha_nft::burn_rare(nft);
+        object::delete(id);
+        coin::split(&mut machine.treasury, 500_000_000, ctx) // Example: 0.5 SUI reward
+    }
+
+    /// Redeem an Epic NFT
+    public fun redeem_epic(
+        machine: &mut Machine,
+        nft: EpicGachaNFT,
+        ctx: &mut TxContext
+    ): Coin<SUI> {
+        let id = gacha_nft::burn_epic(nft);
+        object::delete(id);
+        coin::split(&mut machine.treasury, 1_000_000_000, ctx) // Example: 1 SUI reward
+    }
+
+    /// Accessor for treasury value
+    public fun get_treasury_value(machine: &Machine): u64 {
+        coin::value(&machine.treasury)
+    }
+
+    /// Accessor for total plays
+    public fun get_total_plays(machine: &Machine): u64 {
+        machine.total_plays
+    }
+
+    /// Accessor for total rewards
+    public fun get_total_rewards(machine: &Machine): u64 {
+        machine.total_rewards
+    }
+}

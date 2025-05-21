@@ -1,0 +1,355 @@
+#[test_only]
+#[ignore]
+#[allow(unused_use)]
+module gacha::machine_old_tests {
+    use sui::test_scenario::{Self as ts, Scenario};
+    use sui::sui::SUI;
+    use sui::coin::{Self, Coin};
+    use std::string::{Self, String};
+    use gacha::machine::{Self, Machine, AdminCap};
+    use gacha::gacha_nft::{Self, MinterCap, CommonGachaNFT, RareGachaNFT, EpicGachaNFT};
+
+    const ADMIN: address = @0xAD;
+    const USER: address = @0xB0B;
+
+    const EInvalidTreasury: u64 = 100;
+    const EInvalidNFTName: u64 = 101;
+
+    fun init_test(): Scenario {
+        let mut scenario = ts::begin(ADMIN);
+        // Initialize both modules
+        ts::next_tx(&mut scenario, ADMIN);
+        {
+            gacha_nft::setup(ts::ctx(&mut scenario));
+            machine::setup(ts::ctx(&mut scenario));
+        };
+        scenario
+    }
+
+    #[test]
+    fun test_mint_common() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User mints a Common NFT
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(1_000_000_000, ts::ctx(ts)); // 1 SUI
+            let nft = machine::mint_common(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Common"),
+                string::utf8(b"http://example.com/common.png"),
+                ts::ctx(ts)
+            );
+            assert!(*gacha_nft::get_common_name(&nft) == string::utf8(b"Test Common"), EInvalidNFTName);
+            assert!(machine::get_treasury_value(&machine) == 1_000_000_000, EInvalidTreasury);
+            assert!(machine::get_total_plays(&machine) == 1, 0);
+            assert!(machine::get_total_rewards(&machine) == 1, 0);
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    fun test_mint_rare() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User mints a Rare NFT
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(5_000_000_000, ts::ctx(ts)); // 5 SUI
+            let nft = machine::mint_rare(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Rare"),
+                string::utf8(b"http://example.com/rare.png"),
+                ts::ctx(ts)
+            );
+            assert!(*gacha_nft::get_rare_name(&nft) == string::utf8(b"Test Rare"), EInvalidNFTName);
+            assert!(machine::get_treasury_value(&machine) == 5_000_000_000, EInvalidTreasury);
+            assert!(machine::get_total_plays(&machine) == 1, 0);
+            assert!(machine::get_total_rewards(&machine) == 2, 0);
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    fun test_mint_epic() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User mints an Epic NFT
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(10_000_000_000, ts::ctx(ts)); // 10 SUI
+            let nft = machine::mint_epic(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Epic"),
+                string::utf8(b"http://example.com/epic.png"),
+                ts::ctx(ts)
+            );
+            assert!(*gacha_nft::get_epic_name(&nft) == string::utf8(b"Test Epic"), EInvalidNFTName);
+            assert!(machine::get_treasury_value(&machine) == 10_000_000_000, EInvalidTreasury);
+            assert!(machine::get_total_plays(&machine) == 1, 0);
+            assert!(machine::get_total_rewards(&machine) == 3, 0);
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    fun test_withdraw() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User mints a Common NFT to add funds to treasury
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(1_000_000_000, ts::ctx(ts)); // 1 SUI
+            let nft = machine::mint_common(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Common"),
+                string::utf8(b"http://example.com/common.png"),
+                ts::ctx(ts)
+            );
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        // Admin withdraws funds
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let withdrawn = machine::withdraw(&admin_cap, &mut machine, 500_000_000, ts::ctx(ts)); // 0.5 SUI
+            assert!(coin::value(&withdrawn) == 500_000_000, EInvalidTreasury);
+            assert!(machine::get_treasury_value(&machine) == 500_000_000, EInvalidTreasury);
+            transfer::public_transfer(withdrawn, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    fun test_redeem_common() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User mints a Common NFT
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(1_000_000_000, ts::ctx(ts)); // 1 SUI
+            let nft = machine::mint_common(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Common"),
+                string::utf8(b"http://example.com/common.png"),
+                ts::ctx(ts)
+            );
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        // User redeems the Common NFT
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let nft = ts::take_from_sender<CommonGachaNFT>(ts);
+            let reward = machine::redeem_common(&mut machine, nft, ts::ctx(ts));
+            assert!(coin::value(&reward) == 100_000_000, EInvalidTreasury); // 0.1 SUI
+            assert!(machine::get_treasury_value(&machine) == 900_000_000, EInvalidTreasury); // 1 - 0.1 SUI
+            transfer::public_transfer(reward, USER);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = gacha::machine::EInsufficientPayment)]
+    fun test_insufficient_payment_common() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates and registers a MinterCap
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            let minter_cap = machine::register_minter_cap(&admin_cap, minter_cap, &mut machine, ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        // User attempts to mint with insufficient payment
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(500_000_000, ts::ctx(ts)); // 0.5 SUI
+            let nft = machine::mint_common(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Common"),
+                string::utf8(b"http://example.com/common.png"),
+                ts::ctx(ts)
+            );
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = gacha::machine::EUnauthorizedMinterCap)]
+    fun test_unauthorized_minter_cap() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin creates a MinterCap but does NOT register it
+        ts::next_tx(ts, ADMIN);
+        {
+            let minter_cap = gacha_nft::create_minter_cap(ts::ctx(ts));
+            transfer::public_transfer(minter_cap, ADMIN);
+        };
+
+        // User attempts to mint with unauthorized MinterCap
+        ts::next_tx(ts, USER);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let minter_cap = ts::take_from_address<MinterCap>(ts, ADMIN);
+            let payment = coin::mint_for_testing<SUI>(1_000_000_000, ts::ctx(ts)); // 1 SUI
+            let nft = machine::mint_common(
+                &mut machine,
+                &minter_cap,
+                payment,
+                string::utf8(b"Test Common"),
+                string::utf8(b"http://example.com/common.png"),
+                ts::ctx(ts)
+            );
+            transfer::public_transfer(nft, USER);
+            transfer::public_transfer(minter_cap, ADMIN);
+            ts::return_shared(machine);
+        };
+
+        ts::end(scenario);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = gacha::machine::EInsufficientTreasury)]
+    fun test_insufficient_treasury_withdraw() {
+        let mut scenario = init_test();
+        let ts = &mut scenario;
+
+        // Admin attempts to withdraw from empty treasury
+        ts::next_tx(ts, ADMIN);
+        {
+            let mut machine = ts::take_shared<Machine>(ts);
+            let admin_cap = ts::take_from_sender<AdminCap>(ts);
+            let withdrawn = machine::withdraw(&admin_cap, &mut machine, 1_000_000_000, ts::ctx(ts)); // 1 SUI
+            transfer::public_transfer(withdrawn, ADMIN);
+            ts::return_shared(machine);
+            ts::return_to_sender(ts, admin_cap);
+        };
+
+        ts::end(scenario);
+    }
+}

@@ -1,0 +1,493 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-color: #b480e4;
+  --common-color: #9fe8ff;
+  --rare-color: #fab5e2;
+  --epic-color: #41fbee;
+
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 262 70% 70%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 262 70% 70%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 262 70% 70%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 262 70% 70%;
+}
+
+/* Pixel art icon styles */
+.pixel-icon {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  transform-origin: center;
+  transition: transform 0.2s ease;
+}
+
+.pixel-icon:hover {
+  transform: scale(1.1);
+}
+
+.pixel-icon:active {
+  transform: scale(0.95);
+}
+
+/* SUI logo specific styles */
+.sui-logo {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.dark .sui-logo {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+/* Global button styles */
+button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+/* Base font styles */
+body {
+  font-family: "Courier New", monospace;
+  line-height: 1.5;
+}
+
+/* Reset font family for all elements */
+* {
+  font-family: inherit;
+}
+
+/* Heading styles with pixel font */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Press Start 2P", "Courier New", monospace;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+h4 {
+  font-size: 1.125rem;
+  margin-bottom: 0.875rem;
+}
+
+h5 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+h6 {
+  font-size: 0.875rem;
+  margin-bottom: 0.625rem;
+}
+
+/* Paragraph and text styles */
+p,
+span,
+div,
+button,
+input,
+textarea,
+select,
+label,
+a {
+  font-family: "Courier New", monospace;
+  line-height: 1.5;
+}
+
+/* Pixel art text styles */
+.pixel-text {
+  font-family: "Press Start 2P", "Courier New", monospace;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+}
+
+.pixel-font {
+  font-family: "Press Start 2P", "Courier New", monospace;
+  image-rendering: pixelated;
+  letter-spacing: 0.05em;
+}
+
+.bg-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%2380b4e4' fill-opacity='0.17' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(to bottom, #fbf0ef, #ccffff);
+  background-attachment: fixed;
+}
+
+.dark .bg-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23b480e4' fill-opacity='0.15' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(to bottom, #1a1a2e, #16213e);
+  background-attachment: fixed;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Badge style for price tag */
+.badge {
+  color: black;
+  text-align: center;
+  padding: 0.5em 1em;
+  min-width: 80px;
+  font-size: 0.875rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.2s ease;
+  image-rendering: pixelated;
+}
+
+.badge:hover {
+  transform: scale(1.1) translateY(-2px);
+}
+
+.badge-text {
+  font-weight: bold;
+}
+
+.dark .badge {
+  color: white;
+}
+
+/* Pixel art question mark */
+.pixel-question {
+  font-family: "Press Start 2P", "Courier New", monospace;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #666;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+  transform: scale(0.8);
+  transform-origin: center;
+}
+
+.dark .pixel-question {
+  color: #999;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid #b480e4;
+  outline-offset: 2px;
+  transition: outline-offset 0.2s ease;
+}
+
+.dark :focus-visible {
+  outline-color: #c99df0;
+}
+
+/* Custom styles for selected capsule */
+.selected-capsule {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+  transition: filter 0.3s ease;
+}
+
+.dark .selected-capsule {
+  filter: drop-shadow(0 0 8px rgba(201, 157, 240, 0.5));
+}
+
+/* Bouncy hover effect for navigation icons */
+.nav-icon-hover {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.nav-icon-hover:hover {
+  transform: translateY(-5px);
+}
+
+/* Popup animations */
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdrop-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes popup-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+/* Dialog states */
+[data-state="open"] {
+  animation: popup-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+[data-state="closed"] {
+  animation: popup-out 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+[data-state="open"] .backdrop {
+  animation: backdrop-in 300ms ease forwards;
+}
+
+[data-state="closed"] .backdrop {
+  animation: backdrop-out 300ms ease forwards;
+}
+
+/* Page element animations */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rotate-in {
+  from {
+    opacity: 0;
+    transform: rotate(-10deg) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
+/* Animation classes */
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-fade-in-left {
+  animation: fade-in-left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-fade-in-right {
+  animation: fade-in-right 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-rotate-in {
+  animation: rotate-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Staggered animation delays */
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+.delay-400 {
+  animation-delay: 400ms;
+}
+
+.delay-500 {
+  animation-delay: 500ms;
+}
+
+.delay-600 {
+  animation-delay: 600ms;
+}
+
+.delay-700 {
+  animation-delay: 700ms;
+}
+
+.delay-800 {
+  animation-delay: 800ms;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b480e4;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9d6ad0;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #9d6ad0;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #8a5bc1;
+}
