@@ -6,6 +6,8 @@ import { GachaCapsule } from "../components/gacha-capsule"
 import { Navigation } from "../components/navigation"
 import { ThemeToggle } from "../components/theme-toggle"
 import { getImageUrl } from '../lib/constants';
+import { ConnectButton } from '@suiet/wallet-kit';
+import { WalletConnectionPrompt } from '../components/wallet-connection-prompt';
 
 const fadeInLeft: Variants = {
     hidden: { opacity: 0, x: -20 },
@@ -311,7 +313,9 @@ export default function Collection() {
 
                 {/* Main Content - Capsule Collection */}
                 <div className="mt-16 mb-20">
-                    {prizePool.length === 0 ? (
+                    {!address ? (
+                        <WalletConnectionPrompt message="Connect your wallet to view the Machine collection" />
+                    ) : prizePool.length === 0 ? (
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -391,11 +395,13 @@ export default function Collection() {
                         </AnimatePresence>
                     )}
 
-                    <Pagination
-                        totalItems={prizePool.length}
-                        currentPage={currentPage}
-                        onPageChange={setCurrentPage}
-                    />
+                    {address && prizePool.length > 0 && (
+                        <Pagination
+                            totalItems={prizePool.length}
+                            currentPage={currentPage}
+                            onPageChange={setCurrentPage}
+                        />
+                    )}
                 </div>
 
                 {/* Footer */}

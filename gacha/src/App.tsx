@@ -12,6 +12,7 @@ import Admin from './pages/Admin';
 import CommonCapsule from './pages/CommonCapsule';
 import RareCapsule from './pages/RareCapsule';
 import EpicCapsule from './pages/EpicCapsule';
+import NotFound from './pages/404';
 import './index.css';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
@@ -51,6 +52,7 @@ export default function App() {
                             <Route path="/common-capsule" element={<CommonCapsule />} />
                             <Route path="/rare-capsule" element={<RareCapsule />} />
                             <Route path="/epic-capsule" element={<EpicCapsule />} />
+                            <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
                         <AdminNav />
