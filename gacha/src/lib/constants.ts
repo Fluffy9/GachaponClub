@@ -33,6 +33,7 @@ export function getImageUrl(path: string): string {
 }
 
 // Contract addresses
+export const SUI_RANDOM_ID = "0x8";
 export const SUI_CONTRACT_ADDRESS = "0xf9a4dc2f10f074c4618b44552e49b4da03af76fdcfcc1c16ab01478d6bad92e0";
 export const SUI_MACHINE_ID = "0xad84024ea47de50acc6bea74f6dfd966591c3b6a467201e52d6805b6b91a51e1";
 export const SUI_MINTER_CAP_ID = "0xca0c7b1f6993b44136b27e79819ea11721fccffe2b3166f23a50a104a0270758";
