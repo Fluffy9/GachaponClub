@@ -16,7 +16,7 @@ module gacha::bear {
         /// Description of the token
         description: String,
         /// URL for the token
-        url: Url,
+        image_url: Url,
     }
 
     /// Event emitted when a new Bear NFT is minted
@@ -41,7 +41,7 @@ module gacha::bear {
 
     /// Get the URL of a Bear NFT
     public fun url(nft: &Bear): &Url {
-        &nft.url
+        &nft.image_url
     }
 
     /// Create a new Bear NFT
@@ -51,7 +51,7 @@ module gacha::bear {
             id: object::new(ctx),
             name: string::utf8(b"Bear NFT"),
             description: string::utf8(b"A mighty Bear NFT from the Gacha collection"),
-            url: url::new_unsafe_from_bytes(b"https://gachapon.club/bear.png"),
+            image_url: url::new_unsafe_from_bytes(b"https://gachapon.club/bear.png"),
         };
 
         event::emit(BearMinted {
@@ -79,7 +79,7 @@ module gacha::bear {
 
     /// Permanently delete `nft`
     public fun burn(nft: Bear, _: &mut TxContext) {
-        let Bear { id, name: _, description: _, url: _ } = nft;
+        let Bear { id, name: _, description: _, image_url: _ } = nft;
         object::delete(id)
     }
 } 

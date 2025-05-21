@@ -16,7 +16,7 @@ module gacha::cat {
         /// Description of the token
         description: String,
         /// URL for the token
-        url: Url,
+        image_url: Url,
     }
 
     /// Event emitted when a new Cat NFT is minted
@@ -41,7 +41,7 @@ module gacha::cat {
 
     /// Get the URL of a Cat NFT
     public fun url(nft: &Cat): &Url {
-        &nft.url
+        &nft.image_url
     }
 
     /// Create a new Cat NFT
@@ -51,7 +51,7 @@ module gacha::cat {
             id: object::new(ctx),
             name: string::utf8(b"Cat NFT"),
             description: string::utf8(b"A cute Cat NFT from the Gacha collection"),
-            url: url::new_unsafe_from_bytes(b"https://gachapon.club/cat.png"),
+            image_url: url::new_unsafe_from_bytes(b"https://gachapon.club/cat.png"),
         };
 
         event::emit(CatMinted {
@@ -79,7 +79,7 @@ module gacha::cat {
 
     /// Permanently delete `nft`
     public fun burn(nft: Cat, _: &mut TxContext) {
-        let Cat { id, name: _, description: _, url: _ } = nft;
+        let Cat { id, name: _, description: _, image_url: _ } = nft;
         object::delete(id)
     }
 } 

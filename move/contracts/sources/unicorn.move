@@ -16,7 +16,7 @@ module gacha::unicorn {
         /// Description of the token
         description: String,
         /// URL for the token
-        url: Url,
+        image_url: Url,
     }
 
     /// Event emitted when a new Unicorn NFT is minted
@@ -41,7 +41,7 @@ module gacha::unicorn {
 
     /// Get the URL of a Unicorn NFT
     public fun url(nft: &Unicorn): &Url {
-        &nft.url
+        &nft.image_url
     }
 
     /// Create a new Unicorn NFT with fixed properties
@@ -51,7 +51,7 @@ module gacha::unicorn {
             id: object::new(ctx),
             name: string::utf8(b"Unicorn NFT"),
             description: string::utf8(b"A magical Unicorn NFT from the Gacha collection"),
-            url: url::new_unsafe_from_bytes(b"https://gachapon.club/unicorn.png"),
+            image_url: url::new_unsafe_from_bytes(b"https://gachapon.club/unicorn.png"),
         };
 
         event::emit(UnicornMinted {
@@ -79,7 +79,7 @@ module gacha::unicorn {
 
     /// Permanently delete `nft`
     public fun burn(nft: Unicorn, _: &mut TxContext) {
-        let Unicorn { id, name: _, description: _, url: _ } = nft;
+        let Unicorn { id, name: _, description: _, image_url: _ } = nft;
         object::delete(id)
     }
 } 
