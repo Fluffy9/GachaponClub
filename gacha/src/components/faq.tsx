@@ -12,12 +12,12 @@ const faqItems: FAQItem[] = [
   {
     question: "What is Gachapon Club?",
     answer:
-      "Gachapon Club is the most degen DeFi NFT platform disguised as a capsule toy simulator 😁",
+      "Gachapon Club is the most degen DeFi NFT launchpad disguised as a capsule toy simulator 😁",
   },
   {
     question: "How do the different capsule types work?",
     answer:
-      "As of right now, there are 3 capsules: Common (light blue), Rare (pink), and Epic (pastel green). Select the capsule and complete the purchase to turn the handle and receive a Gachapon Club Capsule NFT. Each tier increases your chances of getting a rarer and more valuable NFT collectible.",
+      "As of right now, there are 3 capsules: Common (light blue), Rare (pink), and Epic (pastel gold). Select the capsule and complete the purchase to turn the handle and receive a Gachapon Club Capsule NFT. Each tier allows you to win rarer and more valuable NFT collectibles.",
   },
   {
     question: "Can I sell my capsule?",
@@ -25,7 +25,7 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "Can I donate my NFT?",
-    answer: "For certain NFT collections, you can donate your NFT in exchange for a capsule of the same tier.",
+    answer: "Any NFT is (theoretically) capable of being donated to the machine but only admin approved NFT collections are allowed to be donated. By donating, you will receive a capsule of the same tier.",
   },
   {
     question: "How do I open a capsule?",
@@ -34,11 +34,11 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "How do prize tiers work? (Technically)",
-    answer: "Each capsule tier (common, rare, epic at this time) has a number of NFT collections that are possible prizes.",
+    answer: "Each capsule tier (common, rare, epic at this time) has a number of NFT collections that are possible prizes. The machine will randomly select one of the NFTs in the tier to be the prize.",
   },
   {
     question: "Tokenomics / Technical implications?",
-    answer: "The capsule prize is decided upon redemption. Because of this, the value of a capsule can be roughly described as a probability based on the smart contract's (machine) holdings, what is within its prize tier, and how many capsules of this type are in the wild. This does dictate a mathematically provable floor. The admin may also decide to increase or decrease the price of capsules in the smart contract based on market factors. There is also some very interesting price action that may occur based on what people THINK will be donated and when. For example, if someone plans to donate a Blue Chip NFT worth a million dollars to the machine, it suddenly makes mathematical sense to buy capsules now and use them after it's donated. In a way, it can also serve as an index to invest in the NFTs on a particular chain.",
+    answer: "The capsule prize is decided upon redemption. Because of this, the value of a capsule can be roughly described as a probability based on the smart contract's (machine) holdings, what is within its prize tier, and how many capsules of this type are in the wild. This does dictate a mathematically provable floor price for capsule NFTs. The admin may also decide to increase or decrease the price of capsules in the smart contract based on market factors. There is also some very interesting price action that may occur based on what people THINK will be donated and when. For example, if someone plans to donate a Blue Chip NFT worth a million dollars to the machine, it suddenly makes mathematical sense to buy capsules now and use them after it's donated. In a way, it can also serve as an index to invest in the NFTs on a particular chain.",
   },
   {
     question: "Long term goal?",

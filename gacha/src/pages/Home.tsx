@@ -103,21 +103,21 @@ const sampleItems = {
         name: "Common",
         type: "common" as const,
         image: "",
-        description: "A this capsule contains a common NFT.",
+        description: "This capsule contains a common NFT.",
         probability: 0.7
     },
     rare: {
         name: "Rare",
         type: "rare" as const,
         image: "",
-        description: "A this capsule contains a rare NFT.",
+        description: "This capsule contains a rare NFT.",
         probability: 0.25
     },
     epic: {
         name: "Epic",
         type: "epic" as const,
         image: "",
-        description: "A this capsule contains a epic NFT.",
+        description: "This capsule contains a epic NFT.",
         probability: 0.05
     }
 }

@@ -86,6 +86,10 @@ export default function Admin() {
         }
     ]);
 
+    useEffect(() => {
+        document.title = "Admin Dashboard | Gachapon Club"
+    }, []);
+
     const fetchPrices = async () => {
         try {
             const machine = await suiClient.getObject({

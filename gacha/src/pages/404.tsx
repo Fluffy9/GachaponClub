@@ -3,6 +3,7 @@ import { ThemeToggle } from "../components/theme-toggle"
 import { Navigation } from "../components/navigation"
 import { GachaCapsule } from "../components/gacha-capsule"
 import { Link } from "react-router-dom"
+import { useEffect } from "react"
 
 const container = {
     hidden: { opacity: 0 },
@@ -20,6 +21,10 @@ const item = {
 }
 
 export default function NotFound() {
+    useEffect(() => {
+        document.title = "404 - Page Not Found | Gachapon Club"
+    }, []);
+
     return (
         <main className="min-h-screen flex flex-col items-center bg-pattern">
             <div className="w-full max-w-6xl px-4 py-6">

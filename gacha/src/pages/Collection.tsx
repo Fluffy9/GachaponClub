@@ -157,6 +157,11 @@ export default function Collection() {
     const [gridCols, setGridCols] = useState(3);
     const [showPopups, setShowPopups] = useState(true);
     const [selectedPrize, setSelectedPrize] = useState<Prize | null>(null);
+
+    useEffect(() => {
+        document.title = "Collection | Gachapon Club"
+    }, []);
+
     // Debug logging for component state
     useEffect(() => {
         console.log('Collection component state:', {
