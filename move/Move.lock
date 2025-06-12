@@ -41,3 +41,8 @@ dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Sui", name = "Sui" },
 ]
+
+[move.toolchain-version]
+compiler-version = "1.49.0"
+edition = "2024"
+flavor = "sui"

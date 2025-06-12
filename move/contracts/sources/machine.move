@@ -328,7 +328,8 @@ public fun add_prize<T: key + store>(
         nft_type,
         tier,
     };
-    df::add(&mut prize.id, nft_type, nft);
+    let nft_id = object::id(&nft);
+    df::add(&mut prize.id, nft_id, nft);
 
     // Add to the appropriate prize pool
     let bag = match (tier) {
@@ -371,7 +372,9 @@ public fun donate_nft_common<T: key + store>(
         nft_type,
         tier,
     };
-    df::add(&mut prize.id, nft_type, nft);
+
+    let nft_id = object::id(&nft);
+    df::add(&mut prize.id, nft_id, nft);
 
     let bag = &mut machine.prize_pool.common_prizes;
     let index = bag::length(bag);
@@ -411,7 +414,9 @@ public fun donate_nft_rare<T: key + store>(
         nft_type,
         tier,
     };
-    df::add(&mut prize.id, nft_type, nft);
+
+    let nft_id = object::id(&nft);
+    df::add(&mut prize.id, nft_id, nft);
 
     let bag = &mut machine.prize_pool.rare_prizes;
     let index = bag::length(bag);
@@ -427,6 +432,7 @@ public fun donate_nft_rare<T: key + store>(
 
     gacha_nft
 }
+
 
 
 /// Donates an NFT to receive an Epic Gacha NFT.
@@ -452,7 +458,9 @@ public fun donate_nft_epic<T: key + store>(
         nft_type,
         tier,
     };
-    df::add(&mut prize.id, nft_type, nft);
+
+    let nft_id = object::id(&nft);
+    df::add(&mut prize.id, nft_id, nft);
 
     let bag = &mut machine.prize_pool.epic_prizes;
     let index = bag::length(bag);
@@ -468,6 +476,7 @@ public fun donate_nft_epic<T: key + store>(
 
     gacha_nft
 }
+
 
 /// Mints a Common Gacha NFT by paying the required SUI.
 /// @param machine: The Machine to update.

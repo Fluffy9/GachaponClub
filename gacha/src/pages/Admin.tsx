@@ -304,24 +304,74 @@ export default function Admin() {
             setError(null);
             setSuccess(null);
 
-            await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::withdraw_treasury',
-                args: [
-                    SUI_ADMIN_CAP_ID,
-                    SUI_MACHINE_ID
+            if (!address) {
+                throw new Error('Wallet not connected');
+            }
+
+            if (address !== adminAddress) {
+                throw new Error('Only the admin can withdraw funds');
+            }
+
+            const tx = new Transaction();
+            tx.setSender(address);
+
+            const moveCall = tx.moveCall({
+                target: `${SUI_CONTRACT_ADDRESS}::machine::withdraw`,
+                arguments: [
+                    tx.object(SUI_ADMIN_CAP_ID),
+                    tx.object(SUI_MACHINE_ID),
+                    tx.pure.u64(machineStats.treasuryBalance.toString()),
                 ],
             });
 
-            toast.success('Treasury withdrawn successfully');
-            await Promise.all([
-                fetchMachineStats(),
-                fetchApprovedNFTs()
-            ]);
+            // Transfer the withdrawn SUI to the sender
+            tx.transferObjects([moveCall], tx.pure.address(address));
+
+            console.log('Calling contract with:', {
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'machine::withdraw',
+                args: [SUI_ADMIN_CAP_ID, SUI_MACHINE_ID, machineStats.treasuryBalance.toString()],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
+
+            const result = await callContract({
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'machine::withdraw',
+                args: [SUI_ADMIN_CAP_ID, SUI_MACHINE_ID, machineStats.treasuryBalance.toString()],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
+
+            console.log('Raw transaction result:', result);
+
+            if (result?.digest) {
+                console.log('Transaction submitted successfully with digest:', result.digest);
+                setSuccess(`Successfully withdrew ${treasuryBalanceDisplay.toFixed(5)} SUI`);
+                toast.success(`Successfully withdrew ${treasuryBalanceDisplay.toFixed(5)} SUI`);
+
+                // Wait for transaction to be confirmed
+                await suiClient.waitForTransaction({ digest: result.digest });
+
+                // Refresh machine stats
+                await fetchMachineStats();
+            } else {
+                throw new Error('Transaction failed - no digest returned');
+            }
         } catch (err) {
-            console.error('Failed to withdraw treasury:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to withdraw treasury';
+            console.error('Withdraw error:', err);
+            console.error('Error details:', {
+                name: err instanceof Error ? err.name : 'Unknown',
+                message: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+            const errorMessage = err instanceof Error ? err.message : 'Failed to withdraw funds';
             setError(errorMessage);
             toast.error(errorMessage);
         } finally {

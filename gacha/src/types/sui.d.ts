@@ -13,4 +13,13 @@ declare module '@mysten/sui' {
     export class Connection {
         constructor(url: string);
     }
+
+    export interface ObjectOwner {
+        AddressOwner: string;
+        ObjectOwner: string;
+        Shared: {
+            initial_shared_version: number;
+        };
+        Immutable: null;
+    }
 } 

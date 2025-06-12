@@ -1,6 +1,0 @@
-[package]
-name = "gacha"
-version = "0.0.1"
-
-[addresses]
-gacha = "0x0" 
