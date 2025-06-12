@@ -89,16 +89,15 @@ export function Inventory() {
     // Filter NFTs into capsules and other NFTs
     const { capsules, otherNfts } = useMemo(() => {
         const gachaCapsules = nfts.filter(nft =>
-            nft.name.toLowerCase().includes('gacha') ||
-            nft.collection === 'Gacha Capsules'
+            (nft.name.toLowerCase().includes('gacha') ||
+                nft.collection === 'Gacha Capsules') &&
+            nft.type?.startsWith(SUI_CONTRACT_ADDRESS)
         );
 
         // Filter other NFTs to only show approved ones
-        console.log("nfts - " + JSON.stringify(nfts))
         const prizeInfos: NFT[] = nfts
-            .filter(nft => nft.type?.includes('::machine::PrizeInfo'))
+            .filter(nft => nft.type?.includes('::machine::PrizeInfo') && nft.type?.startsWith(SUI_CONTRACT_ADDRESS))
             .map((prize) => {
-
                 const fields = JSON.parse(prize.raw)?.data.content.fields;
                 const prizeId = fields.id?.id;
                 const nftType = fields.nft_type?.fields?.name || 'unknown::unknown';
@@ -116,7 +115,6 @@ export function Inventory() {
                     raw: JSON.stringify(prize)
                 };
             });
-        console.log(prizeInfos.map(prize => prize.type))
 
         const filteredNfts = nfts.filter(nft => {
             if (!nft.type) return false;
@@ -128,7 +126,8 @@ export function Inventory() {
 
             return !nft.name.toLowerCase().includes('gacha') &&
                 nft.collection !== 'Gacha Capsules' &&
-                isApproved;
+                isApproved &&
+                nft.type.startsWith(SUI_CONTRACT_ADDRESS);
         });
 
         const otherNfts = [...filteredNfts, ...prizeInfos];
@@ -192,13 +191,20 @@ export function Inventory() {
             setDonationError(null);
             setDonationSuccess(null);
 
+            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+            const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
+            if (!nftType.startsWith(contractAddress)) {
+                throw new Error('NFT is not from current deployment');
+            }
+
             const approvedNFT = approvedNFTs.find(
-                approved => approved.type === nft.type || nft.type.includes(approved.module)
+                approved => (approved.type === nft.type || nft.type.includes(approved.module)) &&
+                    nftType.startsWith(contractAddress)
             );
             console.log('Found approved NFT:', approvedNFT);
 
             if (!approvedNFT) {
-                throw new Error('NFT type not approved for donation');
+                throw new Error('NFT type not approved for donation or not from current contract');
             }
 
             if (!['common', 'rare', 'epic'].includes(approvedNFT.tier)) {
@@ -224,6 +230,13 @@ export function Inventory() {
             // Transfer the returned GachaNFT to the user
             tx.transferObjects([resultObject], tx.pure.address(address!));
             console.log('Transaction built:', tx);
+
+            // Dry run the transaction
+            console.log('Dry running transaction...');
+            const dryRunResult = await suiClient.dryRunTransactionBlock({
+                transactionBlock: await tx.build({ client: suiClient }),
+            });
+            console.log('Dry run result:', JSON.stringify(dryRunResult, null, 2));
 
             console.log('Calling contract with:', {
                 chain: 'sui',
@@ -292,13 +305,16 @@ export function Inventory() {
             setRedeemSuccess(null);
 
             // For regular capsules, find the actual NFT to trade
-            const nftToTrade = nfts.find(nft =>
-                nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
-                nft.name.toLowerCase().includes('gacha')
-            );
+            const nftToTrade = nfts.find(nft => {
+                const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+                const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
+                return nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
+                    nft.name.toLowerCase().includes('gacha') &&
+                    nftType.startsWith(contractAddress);
+            });
 
             if (!nftToTrade) {
-                throw new Error('NFT not found');
+                throw new Error('NFT not found or not from current deployment');
             }
 
             const tier = capsule.id.toLowerCase();
@@ -392,6 +408,33 @@ export function Inventory() {
             setRedeemError(null);
             setRedeemSuccess(null);
 
+            // Show message that unwrapping is not supported
+            throw new Error('Unwrapping prizes is not currently supported. Please check back later.');
+
+            // Rest of the function is commented out since it's not supported
+            /*
+            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+            const nftType = prize.type.startsWith('0x') ? prize.type.slice(2) : prize.type;
+            if (!nftType.startsWith(contractAddress)) {
+                throw new Error('Prize is not from current deployment');
+            }
+
+            const obj = await suiClient.getObject({
+                id: prize.id,
+                options: { showType: true, showOwner: true }
+            });
+            
+            console.log('Prize owner:', obj.data?.owner);
+            
+            // You can check if it's still in the expected bag
+            if (
+                !obj.data ||
+                typeof obj.data.owner !== 'object' ||
+                obj?.data?.owner?.ObjectOwner !== address
+            ) {
+                throw new Error("Prize is not owned by you or is no longer valid.");
+            }
+
             // Create a transaction
             const tx = new Transaction();
             tx.setSender(address!);
@@ -452,6 +495,7 @@ export function Inventory() {
                 console.log('Transaction failed - no digest returned');
                 throw new Error('Transaction failed - no digest returned');
             }
+            */
         } catch (err) {
             console.error('Unwrap error:', err);
             console.error('Error details:', {
@@ -473,6 +517,12 @@ export function Inventory() {
             setIsDonating(nft.id);
             setDonationError(null);
             setDonationSuccess(null);
+
+            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+            const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
+            if (!nftType.startsWith(contractAddress)) {
+                throw new Error('NFT is not from current deployment');
+            }
 
             // Create a transaction
             const tx = new Transaction();
@@ -656,101 +706,178 @@ export function Inventory() {
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                             Your NFTs
                         </h3>
-                        <div className="grid grid-cols-1 gap-4">
-                            {otherNfts.map((nft) => {
-                                // Find the approved NFT type to get the tier
-                                const approvedNFT = approvedNFTs.find(approved =>
-                                    approved.type === nft.type ||
-                                    nft.type.includes(approved.module)
-                                );
-
-                                const isPrize = nft.name.startsWith('Prize:');
-
-                                return (
-                                    <div key={nft.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                {approvedNFT?.imageUrl && (
-                                                    <img
-                                                        src={getImageUrl(approvedNFT.imageUrl)}
-                                                        alt={approvedNFT.name}
-                                                        className="w-8 h-8 object-contain"
-                                                    />
-                                                )}
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                        {nft.name}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                        {approvedNFT?.tier ? `${approvedNFT.tier.charAt(0).toUpperCase() + approvedNFT.tier.slice(1)} Tier` : nft.collection}
-                                                    </p>
-                                                    <div className="flex gap-2 mt-0.5">
-                                                        <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
-                                                            ID: {formatAddress(nft.id)}
+                        <div className="flex flex-col gap-6">
+                            {/* Approved NFTs Section */}
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                    Approved NFTs
+                                </h4>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {otherNfts.filter(nft => {
+                                        const approvedNFT = approvedNFTs.find(approved =>
+                                            (approved.type === nft.type || nft.type.includes(approved.module)) &&
+                                            nft.type.startsWith(SUI_CONTRACT_ADDRESS)
+                                        );
+                                        return approvedNFT && !nft.name.startsWith('Prize:');
+                                    }).map((nft) => (
+                                        <div key={nft.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    {approvedNFTs.find(approved => approved.type === nft.type)?.imageUrl && (
+                                                        <img
+                                                            src={getImageUrl(approvedNFTs.find(approved => approved.type === nft.type)!.imageUrl)}
+                                                            alt={nft.name}
+                                                            className="w-8 h-8 object-contain"
+                                                        />
+                                                    )}
+                                                    <div>
+                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                            {nft.name}
+                                                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                                                Approved
+                                                            </span>
                                                         </p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {approvedNFTs.find(approved => approved.type === nft.type)?.tier ?
+                                                                `${approvedNFTs.find(approved => approved.type === nft.type)!.tier.charAt(0).toUpperCase() + approvedNFTs.find(approved => approved.type === nft.type)!.tier.slice(1)} Tier` :
+                                                                nft.collection}
+                                                        </p>
+                                                        <div className="flex gap-2 mt-0.5">
+                                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                                                ID: {formatAddress(nft.id)}
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                {isPrize ? (
+                                                <div className="flex gap-2">
                                                     <button
-                                                        onClick={() => handleUnwrap(nft)}
-                                                        disabled={isRedeeming === nft.id}
-                                                        className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        onClick={() => handleDonate(nft)}
+                                                        disabled={isDonating === nft.id}
+                                                        className="p-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        aria-label="Donate NFT"
                                                     >
-                                                        <Gift className="w-4 h-4" />
-                                                        <span>{isRedeeming === nft.id ? 'Unwrapping...' : 'Unwrap'}</span>
+                                                        {isDonating === nft.id ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                        ) : (
+                                                            <Gift className="w-4 h-4" />
+                                                        )}
                                                     </button>
-                                                ) : (
-                                                    <>
-                                                        <button
-                                                            onClick={() => handleDonate(nft)}
-                                                            disabled={isDonating === nft.id}
-                                                            className="p-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            aria-label="Donate NFT"
-                                                        >
-                                                            {isDonating === nft.id ? (
-                                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Gift className="w-4 h-4" />
-                                                            )}
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleBurn(nft)}
-                                                            disabled={isDonating === nft.id}
-                                                            className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            aria-label="Burn NFT"
-                                                        >
-                                                            {isDonating === nft.id ? (
-                                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Trash2 className="w-4 h-4" />
-                                                            )}
-                                                        </button>
-                                                    </>
-                                                )}
+                                                    <button
+                                                        onClick={() => handleBurn(nft)}
+                                                        disabled={isDonating === nft.id}
+                                                        className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        aria-label="Burn NFT"
+                                                    >
+                                                        {isDonating === nft.id ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                        ) : (
+                                                            <Trash2 className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {donationError && isDonating === nft.id && (
+                                                <p className="text-red-500 text-sm mt-2">{donationError}</p>
+                                            )}
+                                            {donationSuccess && isDonating === nft.id && (
+                                                <p className="text-green-500 text-sm mt-2">{donationSuccess}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Prize NFTs Section */}
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                    Prize NFTs
+                                </h4>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {otherNfts.filter(nft => nft.name.startsWith('Prize:')).map((nft) => (
+                                        <div key={nft.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                            {nft.name}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {nft.collection}
+                                                        </p>
+                                                        <div className="flex gap-2 mt-0.5">
+                                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                                                ID: {formatAddress(nft.id)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleUnwrap(nft)}
+                                                    disabled={isRedeeming === nft.id}
+                                                    className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <Gift className="w-4 h-4" />
+                                                    <span>{isRedeeming === nft.id ? 'Unwrapping...' : 'Unwrap'}</span>
+                                                </button>
+                                            </div>
+                                            {redeemError && isRedeeming === nft.id && (
+                                                <p className="text-red-500 text-sm mt-2">{redeemError}</p>
+                                            )}
+                                            {redeemSuccess && isRedeeming === nft.id && (
+                                                <p className="text-green-500 text-sm mt-2">{redeemSuccess}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Other NFTs Section */}
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                    Other NFTs (old deployments)
+                                </h4>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {otherNfts.filter(nft => {
+                                        const approvedNFT = approvedNFTs.find(approved =>
+                                            (approved.type === nft.type || nft.type.includes(approved.module)) &&
+                                            nft.type.startsWith(SUI_CONTRACT_ADDRESS)
+                                        );
+                                        return !approvedNFT && !nft.name.startsWith('Prize:');
+                                    }).map((nft) => (
+                                        <div key={nft.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                            {nft.name}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {nft.collection}
+                                                        </p>
+                                                        <div className="flex gap-2 mt-0.5">
+                                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                                                ID: {formatAddress(nft.id)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleBurn(nft)}
+                                                    disabled={isDonating === nft.id}
+                                                    className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    aria-label="Burn NFT"
+                                                >
+                                                    {isDonating === nft.id ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-4 h-4" />
+                                                    )}
+                                                </button>
                                             </div>
                                         </div>
-                                        {donationError && isDonating === nft.id && (
-                                            <p className="text-red-500 text-sm mt-2">{donationError}</p>
-                                        )}
-                                        {donationSuccess && isDonating === nft.id && (
-                                            <p className="text-green-500 text-sm mt-2">{donationSuccess}</p>
-                                        )}
-                                        {redeemError && isRedeeming === nft.id && (
-                                            <p className="text-red-500 text-sm mt-2">{redeemError}</p>
-                                        )}
-                                        {redeemSuccess && isRedeeming === nft.id && (
-                                            <p className="text-green-500 text-sm mt-2">{redeemSuccess}</p>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                            {otherNfts.length === 0 && (
-                                <p className="text-center text-gray-500 dark:text-gray-400 py-4">
-                                    No approved NFTs found
-                                </p>
-                            )}
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </>
                 )}
