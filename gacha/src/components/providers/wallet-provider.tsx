@@ -359,6 +359,47 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             const nftCounts: Record<string, number> = {};
 
+            // First pass: count all NFTs of each type
+            for (const field of dynamicFields.data) {
+                try {
+                    const prizeObject = await suiClient.getObject({
+                        id: field.objectId,
+                        options: { showContent: true }
+                    });
+
+                    const prizeContent = prizeObject.data?.content;
+                    if (!prizeContent || prizeContent.dataType !== 'moveObject' || !('fields' in prizeContent)) {
+                        console.warn(`Skipping: Invalid prize object content`, prizeObject);
+                        continue;
+                    }
+
+                    const fields = prizeContent.fields as {
+                        value: {
+                            fields: {
+                                nft_type?: { fields: { name: string } };
+                                tier?: number[];
+                            }
+                        }
+                    };
+
+                    const nft_type = fields.value.fields.nft_type?.fields?.name;
+                    if (!nft_type) {
+                        console.warn(`Skipping malformed prize:`, fields);
+                        continue;
+                    }
+
+                    const [pkg, module, name] = nft_type.split("::");
+                    const nftKey = `${module}::${name}`;
+                    nftCounts[nftKey] = (nftCounts[nftKey] || 0) + 1;
+                } catch (err) {
+                    console.error(`Error counting ${tier} prize object:`, err);
+                }
+            }
+
+            // Calculate total NFTs in this tier
+            const totalNFTsInTier = Object.values(nftCounts).reduce((sum, count) => sum + count, 0);
+
+            // Second pass: create prize objects with correct probabilities
             const prizePromises = dynamicFields.data.map(async (field) => {
                 try {
                     const prizeObject = await suiClient.getObject({
@@ -373,8 +414,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     }
 
                     const fields = prizeContent.fields as {
-                        nft_type?: { fields: { name: string } };
-                        tier?: number[];
+                        value: {
+                            fields: {
+                                nft_type?: { fields: { name: string } };
+                                tier?: number[];
+                            }
+                        }
                     };
 
                     const nft_type = fields.value.fields.nft_type?.fields?.name;
@@ -387,12 +432,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
                     const [pkg, module, name] = nft_type.split("::");
                     const prizeTier = new TextDecoder().decode(Uint8Array.from(tierBytes)).toLowerCase() as PrizeType;
-
                     const nftKey = `${module}::${name}`;
-                    nftCounts[nftKey] = (nftCounts[nftKey] || 0) + 1;
-
-                    // Calculate total NFTs in this tier
-                    const totalNFTsInTier = Object.values(nftCounts).reduce((sum, count) => sum + count, 0);
 
                     return {
                         name: `${name} (${nftCounts[nftKey]})`,
