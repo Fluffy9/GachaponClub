@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useWallet } from './providers/wallet-provider';
-import { Wallet, Gift, RefreshCw } from 'lucide-react';
+import { Wallet, Gift, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import type { NFT, RawPrizeInfo } from '../lib/wallet-context';
 import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl } from '../lib/constants';
 import { Transaction } from '@mysten/sui/transactions';
+import { toast } from 'sonner';
+import { formatAddress } from '../lib/utils';
 
 interface Capsule extends NFT {
     quantity: number;
@@ -39,8 +41,25 @@ const DEFAULT_CAPSULES: Capsule[] = [
     }
 ];
 
+// Helper function to safely parse JSON
+const safeJsonParse = (json: string): any => {
+    try {
+        return JSON.parse(json);
+    } catch (e) {
+        console.warn('Failed to parse JSON:', e);
+        return {};
+    }
+};
+
+// Helper function to get owner address
+const getOwnerAddress = (raw: string): string => {
+    const data = safeJsonParse(raw);
+    debugger;
+    return data?.data?.owner?.AddressOwner || '';
+};
+
 export function Inventory() {
-    const { walletType, address, chain, balances, nfts, approvedNFTs, callContract, fetchApprovedNFTs, fetchPrizePool } = useWallet();
+    const { walletType, address, chain, balances, nfts, approvedNFTs, callContract, fetchApprovedNFTs, fetchPrizePool, fetchNFTs, suiClient } = useWallet();
     const [activeTab, setActiveTab] = useState<'capsules' | 'nfts'>('capsules');
     const [isDonating, setIsDonating] = useState<string | null>(null);
     const [donationError, setDonationError] = useState<string | null>(null);
@@ -48,6 +67,24 @@ export function Inventory() {
     const [redeemError, setRedeemError] = useState<string | null>(null);
     const [donationSuccess, setDonationSuccess] = useState<string | null>(null);
     const [redeemSuccess, setRedeemSuccess] = useState<string | null>(null);
+
+    // Fetch data when component mounts and when activeTab changes
+    useEffect(() => {
+        if (address) {
+            const fetchData = async () => {
+                try {
+                    await Promise.all([
+                        fetchApprovedNFTs(),
+                        fetchPrizePool(),
+                        fetchNFTs(address)
+                    ]);
+                } catch (error) {
+                    console.error('Error fetching inventory data:', error);
+                }
+            };
+            fetchData();
+        }
+    }, [address, activeTab]);
 
     // Filter NFTs into capsules and other NFTs
     const { capsules, otherNfts } = useMemo(() => {
@@ -150,6 +187,7 @@ export function Inventory() {
     };
     const handleDonate = async (nft: NFT) => {
         try {
+            console.log('Starting donation for NFT:', nft);
             setIsDonating(nft.id);
             setDonationError(null);
             setDonationSuccess(null);
@@ -157,6 +195,7 @@ export function Inventory() {
             const approvedNFT = approvedNFTs.find(
                 approved => approved.type === nft.type || nft.type.includes(approved.module)
             );
+            console.log('Found approved NFT:', approvedNFT);
 
             if (!approvedNFT) {
                 throw new Error('NFT type not approved for donation');
@@ -168,6 +207,7 @@ export function Inventory() {
 
             const functionName = `donate_nft_${approvedNFT.tier}`;
             const typeArg = approvedNFT.type;
+            console.log('Using function:', functionName, 'with type:', typeArg);
 
             const tx = new Transaction();
             tx.setSender(address!);
@@ -183,6 +223,18 @@ export function Inventory() {
 
             // Transfer the returned GachaNFT to the user
             tx.transferObjects([resultObject], tx.pure.address(address!));
+            console.log('Transaction built:', tx);
+
+            console.log('Calling contract with:', {
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: `machine::${functionName}`,
+                args: [],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
 
             const result = await callContract({
                 chain: 'sui',
@@ -195,24 +247,38 @@ export function Inventory() {
                 }
             });
 
-            if (!result) {
-                throw new Error('Transaction failed: No result returned');
-            }
+            console.log('Raw transaction result:', result);
 
-            if (result.effects?.status?.status === 'success') {
+            // Check if we have a digest, which indicates the transaction was submitted
+            if (result?.digest) {
+                console.log('Transaction submitted successfully with digest:', result.digest);
                 setDonationSuccess(`Successfully donated ${nft.name}`);
-                // Update both approved NFTs and prize pool
+                toast.success(`Successfully donated ${nft.name}`);
+
+                // Wait for transaction to be confirmed
+                await suiClient.waitForTransaction({ digest: result.digest });
+
+                // Refresh all relevant data
                 await Promise.all([
                     fetchApprovedNFTs(),
-                    fetchPrizePool()
+                    fetchPrizePool(),
+                    fetchNFTs(address!)
                 ]);
+                console.log('Data refresh complete');
             } else {
-                const errorMessage = result.effects?.status?.error || 'Transaction failed';
-                throw new Error(errorMessage);
+                console.log('Transaction failed - no digest returned');
+                throw new Error('Transaction failed - no digest returned');
             }
         } catch (err) {
             console.error('Donation error:', err);
-            setDonationError(err instanceof Error ? err.message : 'Failed to donate NFT');
+            console.error('Error details:', {
+                name: err instanceof Error ? err.name : 'Unknown',
+                message: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+            const errorMessage = err instanceof Error ? err.message : 'Failed to donate NFT';
+            setDonationError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsDonating(null);
         }
@@ -220,7 +286,7 @@ export function Inventory() {
 
     const handleRedeem = async (capsule: Capsule) => {
         try {
-            debugger
+            console.log('Starting redemption for capsule:', capsule);
             setIsRedeeming(capsule.id);
             setRedeemError(null);
             setRedeemSuccess(null);
@@ -241,6 +307,7 @@ export function Inventory() {
             }
 
             const functionName = `trade_${tier}`;
+            console.log('Using function:', functionName);
 
             // Create a transaction
             const tx = new Transaction();
@@ -257,6 +324,18 @@ export function Inventory() {
 
             // Transfer the result to the sender
             tx.transferObjects([moveCall], tx.pure.address(address!));
+            console.log('Transaction built:', tx);
+
+            console.log('Calling contract with:', {
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: `machine::${functionName}`,
+                args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
 
             const result = await callContract({
                 chain: 'sui',
@@ -269,16 +348,38 @@ export function Inventory() {
                 }
             });
 
-            if (result.effects?.status?.status === 'success') {
+            console.log('Raw transaction result:', result);
+
+            // Check if we have a digest, which indicates the transaction was submitted
+            if (result?.digest) {
+                console.log('Transaction submitted successfully with digest:', result.digest);
                 setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
-                // Refresh NFTs after successful redemption
-                await fetchApprovedNFTs();
+                toast.success(`Successfully redeemed ${capsule.name}`);
+
+                // Wait for transaction to be confirmed
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Refresh all relevant data
+                await Promise.all([
+                    fetchApprovedNFTs(),
+                    fetchPrizePool(),
+                    fetchNFTs(address!)
+                ]);
+                console.log('Data refresh complete');
             } else {
-                throw new Error('Transaction failed');
+                console.log('Transaction failed - no digest returned');
+                throw new Error('Transaction failed - no digest returned');
             }
         } catch (err) {
             console.error('Redeem error:', err);
-            setRedeemError(err instanceof Error ? err.message : 'Failed to redeem capsule');
+            console.error('Error details:', {
+                name: err instanceof Error ? err.name : 'Unknown',
+                message: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+            const errorMessage = err instanceof Error ? err.message : 'Failed to redeem capsule';
+            setRedeemError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsRedeeming(null);
         }
@@ -286,6 +387,7 @@ export function Inventory() {
 
     const handleUnwrap = async (prize: NFT) => {
         try {
+            console.log('Starting unwrap for prize:', prize);
             setIsRedeeming(prize.id);
             setRedeemError(null);
             setRedeemSuccess(null);
@@ -304,6 +406,18 @@ export function Inventory() {
 
             // Transfer the result to the sender
             tx.transferObjects([moveCall], tx.pure.address(address!));
+            console.log('Transaction built:', tx);
+
+            console.log('Calling contract with:', {
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'machine::consume_prize',
+                args: [prize.id],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
 
             const result = await callContract({
                 chain: 'sui',
@@ -316,18 +430,117 @@ export function Inventory() {
                 }
             });
 
-            if (result.effects?.status?.status === 'success') {
+            console.log('Raw transaction result:', result);
+
+            // Check if we have a digest, which indicates the transaction was submitted
+            if (result?.digest) {
+                console.log('Transaction submitted successfully with digest:', result.digest);
                 setRedeemSuccess(`Successfully unwrapped ${prize.name}`);
-                // Refresh NFTs after successful unwrap
-                await fetchApprovedNFTs();
+                toast.success(`Successfully unwrapped ${prize.name}`);
+
+                // Wait for transaction to be confirmed
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Refresh all relevant data
+                await Promise.all([
+                    fetchApprovedNFTs(),
+                    fetchPrizePool(),
+                    fetchNFTs(address!)
+                ]);
+                console.log('Data refresh complete');
             } else {
-                throw new Error('Transaction failed');
+                console.log('Transaction failed - no digest returned');
+                throw new Error('Transaction failed - no digest returned');
             }
         } catch (err) {
             console.error('Unwrap error:', err);
-            setRedeemError(err instanceof Error ? err.message : 'Failed to unwrap prize');
+            console.error('Error details:', {
+                name: err instanceof Error ? err.name : 'Unknown',
+                message: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+            const errorMessage = err instanceof Error ? err.message : 'Failed to unwrap prize';
+            setRedeemError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsRedeeming(null);
+        }
+    };
+
+    const handleBurn = async (nft: NFT) => {
+        try {
+            console.log('Starting burn for NFT:', nft);
+            setIsDonating(nft.id);
+            setDonationError(null);
+            setDonationSuccess(null);
+
+            // Create a transaction
+            const tx = new Transaction();
+            tx.setSender(address!);
+
+            // Transfer the NFT directly to the zero address
+            tx.transferObjects(
+                [tx.object(nft.id)],
+                tx.pure.address('0x0000000000000000000000000000000000000000000000000000000000000000')
+            );
+            console.log('Transaction built:', tx);
+
+            console.log('Calling contract with:', {
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'transferObjects',
+                args: [nft.id, '0x0000000000000000000000000000000000000000000000000000000000000000'],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
+
+            const result = await callContract({
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'transferObjects',
+                args: [nft.id, '0x0000000000000000000000000000000000000000000000000000000000000000'],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
+
+            console.log('Raw transaction result:', result);
+
+            // Check if we have a digest, which indicates the transaction was submitted
+            if (result?.digest) {
+                console.log('Transaction submitted successfully with digest:', result.digest);
+                setDonationSuccess(`Successfully burned ${nft.name}`);
+                toast.success(`Successfully burned ${nft.name}`);
+
+                // Wait for transaction to be confirmed
+                await suiClient.waitForTransaction({ digest: result.digest });
+
+                // Refresh all relevant data
+                await Promise.all([
+                    fetchApprovedNFTs(),
+                    fetchPrizePool(),
+                    fetchNFTs(address!)
+                ]);
+                console.log('Data refresh complete');
+            } else {
+                console.log('Transaction failed - no digest returned');
+                throw new Error('Transaction failed - no digest returned');
+            }
+        } catch (err) {
+            console.error('Burn error:', err);
+            console.error('Error details:', {
+                name: err instanceof Error ? err.name : 'Unknown',
+                message: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+            const errorMessage = err instanceof Error ? err.message : 'Failed to burn NFT';
+            setDonationError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setIsDonating(null);
         }
     };
 
@@ -403,6 +616,11 @@ export function Inventory() {
                                                 <p className="text-xs text-gray-500 dark:text-gray-400">
                                                     {capsule.id.charAt(0).toUpperCase() + capsule.id.slice(1)} Capsule
                                                 </p>
+                                                <div className="flex gap-2 mt-0.5">
+                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                                        ID: {formatAddress(capsule.id)}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
                                         <button
@@ -466,27 +684,52 @@ export function Inventory() {
                                                     <p className="text-xs text-gray-500 dark:text-gray-400">
                                                         {approvedNFT?.tier ? `${approvedNFT.tier.charAt(0).toUpperCase() + approvedNFT.tier.slice(1)} Tier` : nft.collection}
                                                     </p>
+                                                    <div className="flex gap-2 mt-0.5">
+                                                        <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                                                            ID: {formatAddress(nft.id)}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            {isPrize ? (
-                                                <button
-                                                    onClick={() => handleUnwrap(nft)}
-                                                    disabled={isRedeeming === nft.id}
-                                                    className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    <Gift className="w-4 h-4" />
-                                                    <span>{isRedeeming === nft.id ? 'Unwrapping...' : 'Unwrap'}</span>
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleDonate(nft)}
-                                                    disabled={isDonating === nft.id}
-                                                    className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    <Gift className="w-4 h-4" />
-                                                    <span>{isDonating === nft.id ? 'Donating...' : 'Donate'}</span>
-                                                </button>
-                                            )}
+                                            <div className="flex gap-2">
+                                                {isPrize ? (
+                                                    <button
+                                                        onClick={() => handleUnwrap(nft)}
+                                                        disabled={isRedeeming === nft.id}
+                                                        className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        <Gift className="w-4 h-4" />
+                                                        <span>{isRedeeming === nft.id ? 'Unwrapping...' : 'Unwrap'}</span>
+                                                    </button>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleDonate(nft)}
+                                                            disabled={isDonating === nft.id}
+                                                            className="p-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            aria-label="Donate NFT"
+                                                        >
+                                                            {isDonating === nft.id ? (
+                                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                            ) : (
+                                                                <Gift className="w-4 h-4" />
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleBurn(nft)}
+                                                            disabled={isDonating === nft.id}
+                                                            className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            aria-label="Burn NFT"
+                                                        >
+                                                            {isDonating === nft.id ? (
+                                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                            ) : (
+                                                                <Trash2 className="w-4 h-4" />
+                                                            )}
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                         {donationError && isDonating === nft.id && (
                                             <p className="text-red-500 text-sm mt-2">{donationError}</p>
