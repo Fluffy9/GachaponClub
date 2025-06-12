@@ -4,16 +4,15 @@ import { SuiClient } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import type { SuiObjectResponse } from '@mysten/sui/client';
 import type { WalletType, TokenBalance, NFT } from '../../lib/wallet-context';
-import { NETWORK, NFT_MODULES, SUI_MACHINE_ID, getImageUrl } from '../../lib/constants';
+import { NETWORK, NFT_MODULES, SUI_MACHINE_ID, SUI_CONTRACT_ADDRESS, getImageUrl } from '../../lib/constants';
 import { coinWithBalance } from '@mysten/sui/transactions';
+import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 
-// Initialize SuiClient with the correct network
 const suiClient = new SuiClient({
     url: NETWORK === 'testnet'
         ? 'https://fullnode.testnet.sui.io:443'
         : 'https://fullnode.mainnet.sui.io:443'
 });
-
 type PrizeType = "epic" | "rare" | "common";
 
 interface Prize {
@@ -71,6 +70,7 @@ export interface WalletContextType {
     };
     fetchApprovedNFTs: () => Promise<void>;
     fetchPrizePool: () => Promise<void>;
+    fetchNFTs: (address: string) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -121,7 +121,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             const machine = await suiClient.getObject({
                 id: SUI_MACHINE_ID,
-                options: { showContent: true }
+                options: { showContent: true, showOwner: true }
             });
 
             console.log('=== Machine Object in wallet provider ===');
@@ -237,7 +237,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                         if (field.name.type === `${moduleName}::metadata`) {
                             const metadataObject = await suiClient.getObject({
                                 id: field.objectId,
-                                options: { showContent: true }
+                                options: { showContent: true, showOwner: true }
                             });
 
                             if (metadataObject.data?.content?.dataType === 'moveObject') {
@@ -277,7 +277,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     module: moduleName || 'Unknown',
                     packageId: packageId || 'Unknown',
                     imageUrl: metadata.imageUrl,
-                    description: metadata.description
+                    description: metadata.description,
+                    raw: JSON.stringify(nft)
                 };
                 console.log('Final transformed NFT:', transformedNFT);
                 return transformedNFT;
@@ -299,7 +300,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             const machineObject = await suiClient.getObject({
                 id: SUI_MACHINE_ID,
-                options: { showContent: true }
+                options: { showContent: true, showOwner: true }
             });
 
             console.log('Machine object response:', JSON.stringify(machineObject, null, 2));
@@ -359,11 +360,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
             const nftCounts: Record<string, number> = {};
 
+            // First pass: count all NFTs of each type
+            for (const field of dynamicFields.data) {
+                try {
+                    const prizeObject = await suiClient.getObject({
+                        id: field.objectId,
+                        options: { showContent: true, showOwner: true }
+                    });
+
+                    const prizeContent = prizeObject.data?.content;
+                    if (!prizeContent || prizeContent.dataType !== 'moveObject' || !('fields' in prizeContent)) {
+                        console.warn(`Skipping: Invalid prize object content`, prizeObject);
+                        continue;
+                    }
+
+                    const fields = prizeContent.fields as {
+                        value: {
+                            fields: {
+                                nft_type?: { fields: { name: string } };
+                                tier?: number[];
+                            }
+                        }
+                    };
+
+                    const nft_type = fields.value.fields.nft_type?.fields?.name;
+                    if (!nft_type) {
+                        console.warn(`Skipping malformed prize:`, fields);
+                        continue;
+                    }
+
+                    const [pkg, module, name] = nft_type.split("::");
+                    const nftKey = `${module}::${name}`;
+                    nftCounts[nftKey] = (nftCounts[nftKey] || 0) + 1;
+                } catch (err) {
+                    console.error(`Error counting ${tier} prize object:`, err);
+                }
+            }
+
+            // Calculate total NFTs in this tier
+            const totalNFTsInTier = Object.values(nftCounts).reduce((sum, count) => sum + count, 0);
+
+            // Second pass: create prize objects with correct probabilities
             const prizePromises = dynamicFields.data.map(async (field) => {
                 try {
                     const prizeObject = await suiClient.getObject({
                         id: field.objectId,
-                        options: { showContent: true }
+                        options: { showContent: true, showOwner: true }
                     });
 
                     const prizeContent = prizeObject.data?.content;
@@ -373,8 +415,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     }
 
                     const fields = prizeContent.fields as {
-                        nft_type?: { fields: { name: string } };
-                        tier?: number[];
+                        value: {
+                            fields: {
+                                nft_type?: { fields: { name: string } };
+                                tier?: number[];
+                            }
+                        }
                     };
 
                     const nft_type = fields.value.fields.nft_type?.fields?.name;
@@ -387,15 +433,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
                     const [pkg, module, name] = nft_type.split("::");
                     const prizeTier = new TextDecoder().decode(Uint8Array.from(tierBytes)).toLowerCase() as PrizeType;
-
                     const nftKey = `${module}::${name}`;
-                    nftCounts[nftKey] = (nftCounts[nftKey] || 0) + 1;
-
-                    // Calculate total NFTs in this tier
-                    const totalNFTsInTier = Object.values(nftCounts).reduce((sum, count) => sum + count, 0);
 
                     return {
-                        name: `${name} (${nftCounts[nftKey]})`,
+                        name: `${name}`,
                         type: prizeTier,
                         imageUrl: getImageUrl(`/${module.toLowerCase()}.png`),
                         description: `A ${prizeTier} tier ${name} from ${module}`,
@@ -455,16 +496,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             };
 
             // Fetch NFTs
-            const fetchNFTs = async () => {
+            const fetchNFTs = async (ownerAddress: string) => {
                 try {
+                    console.log('Fetching NFTs for address:', ownerAddress);
                     const objects = await suiClient.getOwnedObjects({
-                        owner: suiAccount.address,
-                        options: { showContent: true }
+                        owner: ownerAddress,
+                        options: { showContent: true, showOwner: true }
                     });
 
+                    console.log('Raw owned NFT objects:', objects.data);
+
                     const nftObjects = objects.data
-                        .filter((obj: SuiObjectResponse) =>
-                            obj.data?.content?.dataType === 'moveObject')
+                        .filter((obj: SuiObjectResponse) => {
+                            const isMoveObject = obj.data?.content?.dataType === 'moveObject';
+                            const content = obj.data?.content as { dataType: 'moveObject'; type: string } | undefined;
+                            const type = content?.type || '';
+                            // Only include NFTs from the current contract deployment, handling 0x prefix
+                            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+                            const nftType = type.startsWith('0x') ? type.slice(2) : type;
+                            const isFromCurrentDeployment = nftType.startsWith(contractAddress);
+                            return isMoveObject && isFromCurrentDeployment;
+                        })
                         .map((obj: SuiObjectResponse) => {
                             const content = obj.data?.content as {
                                 dataType: 'moveObject';
@@ -476,10 +528,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                                 name: content?.fields?.name || 'Unknown NFT',
                                 imageUrl: content?.fields?.image_url || '',
                                 collection: content?.fields?.collection || '',
-                                type: content?.type || ''
+                                type: content?.type || '',
+                                raw: JSON.stringify(obj)
                             };
                         });
 
+                    console.log('Filtered and owned NFTs:', nftObjects);
                     setNfts(nftObjects);
                 } catch (error) {
                     console.error('Failed to fetch NFTs:', error);
@@ -491,7 +545,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             const fetchData = async () => {
                 await Promise.all([
                     fetchApprovedNFTs(),
-                    fetchNFTs(),
+                    fetchNFTs(suiAccount.address),
                     fetchPrizePool()
                 ]);
             };
@@ -661,6 +715,51 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const fetchNFTs = async (address: string) => {
+        try {
+            console.log('Fetching NFTs for address:', address);
+            const objects = await suiClient.getOwnedObjects({
+                owner: address,
+                options: { showContent: true }
+            });
+
+            console.log('Raw owned NFT objects:', objects.data);
+
+            const nftObjects = objects.data
+                .filter((obj: SuiObjectResponse) => {
+                    const isMoveObject = obj.data?.content?.dataType === 'moveObject';
+                    const content = obj.data?.content as { dataType: 'moveObject'; type: string } | undefined;
+                    const type = content?.type || '';
+                    // Only include NFTs from the current contract deployment, handling 0x prefix
+                    const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
+                    const nftType = type.startsWith('0x') ? type.slice(2) : type;
+                    const isFromCurrentDeployment = nftType.startsWith(contractAddress);
+                    return isMoveObject && isFromCurrentDeployment;
+                })
+                .map((obj: SuiObjectResponse) => {
+                    const content = obj.data?.content as {
+                        dataType: 'moveObject';
+                        type: string;
+                        fields: Record<string, any>;
+                    };
+                    return {
+                        id: content?.fields?.id?.id || '',
+                        name: content?.fields?.name || 'Unknown NFT',
+                        imageUrl: content?.fields?.image_url || '',
+                        collection: content?.fields?.collection || '',
+                        type: content?.type || '',
+                        raw: JSON.stringify(obj)
+                    };
+                });
+
+            console.log('Filtered and owned NFTs:', nftObjects);
+            setNfts(nftObjects);
+        } catch (error) {
+            console.error('Failed to fetch NFTs:', error);
+            setNfts([]);
+        }
+    };
+
     const value = {
         walletType,
         address,
@@ -689,7 +788,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             }
         },
         fetchApprovedNFTs,
-        fetchPrizePool
+        fetchPrizePool,
+        fetchNFTs
     };
 
     return (

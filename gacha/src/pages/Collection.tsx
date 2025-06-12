@@ -32,6 +32,7 @@ interface Prize {
     imageUrl: string;
     description: string;
     probability: number;
+    count?: number;
 }
 
 interface GachaCapsuleItem {
@@ -271,6 +272,14 @@ export default function Collection() {
 
                         {/* Description */}
                         <p className="text-gray-700 dark:text-gray-300 text-sm">{selectedPrize.description}</p>
+                        <hr className="my-2" />
+                        {/* NFT Count */}
+                        <div className="mt-2 flex items-center gap-2">
+                            <span className="text-gray-500 dark:text-gray-400 text-sm">Quantity:</span>
+                            <span className="bg-[#b480e4] dark:bg-[#9d6ad0] text-white text-xs font-bold rounded-full px-2 py-0.5">
+                                {selectedPrize.count || 0}
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
