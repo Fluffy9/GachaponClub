@@ -50,9 +50,9 @@ export default function Admin() {
     const [success, setSuccess] = useState<string | null>(null);
     const [machineStats, setMachineStats] = useState({
         totalPlays: 0,
-        commonRewards: 0,
-        rareRewards: 0,
-        epicRewards: 0,
+        commonMints: 0,
+        rareMints: 0,
+        epicMints: 0,
         treasuryBalance: BigInt(0)
     });
     const [newNFTType, setNewNFTType] = useState("");
@@ -125,16 +125,16 @@ export default function Admin() {
             if (machine.data?.content?.dataType === 'moveObject') {
                 const fields = machine.data.content.fields as {
                     total_plays: string;
-                    common_rewards: string;
-                    rare_rewards: string;
-                    epic_rewards: string;
+                    common_mints: string;
+                    rare_mints: string;
+                    epic_mints: string;
                     treasury: { fields: { balance: string } };
                 };
                 setMachineStats({
                     totalPlays: fields.total_plays ? Number(fields.total_plays) : 0,
-                    commonRewards: fields.common_rewards ? Number(fields.common_rewards) : 0,
-                    rareRewards: fields.rare_rewards ? Number(fields.rare_rewards) : 0,
-                    epicRewards: fields.epic_rewards ? Number(fields.epic_rewards) : 0,
+                    commonMints: fields.common_mints ? Number(fields.common_mints) : 0,
+                    rareMints: fields.rare_mints ? Number(fields.rare_mints) : 0,
+                    epicMints: fields.epic_mints ? Number(fields.epic_mints) : 0,
                     treasuryBalance: fields.treasury.fields.balance ? BigInt(fields.treasury.fields.balance) : BigInt(0)
                 });
             }
@@ -539,15 +539,9 @@ export default function Admin() {
                                 <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Machine Statistics</h2>
                                 <div className="flex flex-wrap gap-4">
                                     <div className="flex items-center gap-2">
-                                        <Package className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {machineStats.totalPlays} Plays
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
                                         <Coins className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
                                         <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {machineStats.commonRewards + machineStats.rareRewards + machineStats.epicRewards} Total Rewards
+                                            {machineStats.totalPlays} Plays
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -569,26 +563,26 @@ export default function Admin() {
                                 </div>
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                     <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Common Rewards
+                                        Common Mints
                                     </h3>
                                     <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.commonRewards}
+                                        {machineStats.commonMints}
                                     </p>
                                 </div>
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                     <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Rare Rewards
+                                        Rare Mints
                                     </h3>
                                     <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.rareRewards}
+                                        {machineStats.rareMints}
                                     </p>
                                 </div>
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                     <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Epic Rewards
+                                        Epic Mints
                                     </h3>
                                     <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.epicRewards}
+                                        {machineStats.epicMints}
                                     </p>
                                 </div>
                             </div>
