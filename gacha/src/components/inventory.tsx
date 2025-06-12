@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useWallet } from './providers/wallet-provider';
 import { Wallet, Gift, RefreshCw } from 'lucide-react';
-import type { NFT } from '../lib/wallet-context';
+import type { NFT, RawPrizeInfo } from '../lib/wallet-context';
 import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl } from '../lib/constants';
 import { Transaction } from '@mysten/sui/transactions';
 
@@ -16,7 +16,8 @@ const DEFAULT_CAPSULES: Capsule[] = [
         imageUrl: getImageUrl('/capsules/common.png'),
         collection: 'Gacha Capsules',
         type: 'gacha::gacha_nft::CommonGachaNFT',
-        quantity: 0
+        quantity: 0,
+        raw: ''
     },
     {
         id: 'rare',
@@ -24,7 +25,8 @@ const DEFAULT_CAPSULES: Capsule[] = [
         imageUrl: getImageUrl('/capsules/rare.png'),
         collection: 'Gacha Capsules',
         type: 'gacha::gacha_nft::RareGachaNFT',
-        quantity: 0
+        quantity: 0,
+        raw: ''
     },
     {
         id: 'epic',
@@ -32,12 +34,13 @@ const DEFAULT_CAPSULES: Capsule[] = [
         imageUrl: getImageUrl('/capsules/epic.png'),
         collection: 'Gacha Capsules',
         type: 'gacha::gacha_nft::EpicGachaNFT',
-        quantity: 0
+        quantity: 0,
+        raw: ''
     }
 ];
 
 export function Inventory() {
-    const { walletType, address, chain, balances, nfts, approvedNFTs, callContract, fetchApprovedNFTs } = useWallet();
+    const { walletType, address, chain, balances, nfts, approvedNFTs, callContract, fetchApprovedNFTs, fetchPrizePool } = useWallet();
     const [activeTab, setActiveTab] = useState<'capsules' | 'nfts'>('capsules');
     const [isDonating, setIsDonating] = useState<string | null>(null);
     const [donationError, setDonationError] = useState<string | null>(null);
@@ -54,7 +57,31 @@ export function Inventory() {
         );
 
         // Filter other NFTs to only show approved ones
-        const otherNfts = nfts.filter(nft => {
+        console.log("nfts - " + JSON.stringify(nfts))
+        const prizeInfos: NFT[] = nfts
+            .filter(nft => nft.type?.includes('::machine::PrizeInfo'))
+            .map((prize) => {
+
+                const fields = JSON.parse(prize.raw)?.data.content.fields;
+                const prizeId = fields.id?.id;
+                const nftType = fields.nft_type?.fields?.name || 'unknown::unknown';
+                const tierBytes: number[] = fields.tier || [];
+
+                // Decode ASCII values to string (e.g., [99,111,...] → "common")
+                const tier = String.fromCharCode(...tierBytes);
+
+                return {
+                    id: prizeId,
+                    name: `Prize: ${nftType.split('::').pop() || 'Unknown'}`,
+                    collection: 'Gacha Prizes',
+                    imageUrl: getImageUrl(`/nft/${tier}.png`),
+                    type: nftType,
+                    raw: JSON.stringify(prize)
+                };
+            });
+        console.log(prizeInfos.map(prize => prize.type))
+
+        const filteredNfts = nfts.filter(nft => {
             if (!nft.type) return false;
 
             const isApproved = approvedNFTs.some(approved =>
@@ -67,6 +94,7 @@ export function Inventory() {
                 isApproved;
         });
 
+        const otherNfts = [...filteredNfts, ...prizeInfos];
         return { capsules: gachaCapsules, otherNfts };
     }, [nfts, approvedNFTs]);
 
@@ -162,15 +190,25 @@ export function Inventory() {
                 method: `machine::${functionName}`,
                 args: [],
                 options: {
-                    transaction: tx
+                    transaction: tx,
+                    gasBudget: 100000000
                 }
             });
 
-            if (result.effects?.status.status === 'success') {
+            if (!result) {
+                throw new Error('Transaction failed: No result returned');
+            }
+
+            if (result.effects?.status?.status === 'success') {
                 setDonationSuccess(`Successfully donated ${nft.name}`);
-                await fetchApprovedNFTs();
+                // Update both approved NFTs and prize pool
+                await Promise.all([
+                    fetchApprovedNFTs(),
+                    fetchPrizePool()
+                ]);
             } else {
-                throw new Error('Transaction failed');
+                const errorMessage = result.effects?.status?.error || 'Transaction failed';
+                throw new Error(errorMessage);
             }
         } catch (err) {
             console.error('Donation error:', err);
@@ -186,59 +224,153 @@ export function Inventory() {
             setRedeemError(null);
             setRedeemSuccess(null);
 
-            // Find the actual NFT to trade
-            const nftToTrade = nfts.find(nft =>
-                nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
-                nft.name.toLowerCase().includes('gacha')
-            );
-
-            if (!nftToTrade) {
-                throw new Error('NFT not found');
-            }
-
-            // Validate tier
-            const tier = capsule.id.toLowerCase();
-            if (!['common', 'rare', 'epic'].includes(tier)) {
-                throw new Error(`Invalid tier: ${tier}`);
-            }
-
-            // Call the trade function based on the capsule's tier
-            const functionName = `trade_${tier}`;
-
             // Create a transaction
             const tx = new Transaction();
             tx.setSender(address!);
 
-            // Add the move call
-            const moveCall = tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
-                arguments: [
-                    tx.object(SUI_MACHINE_ID),
-                    tx.object(nftToTrade.id),
-                    tx.object(SUI_RANDOM_ID) // Using the correct Random object ID
-                ],
-            });
+            // If it's a prize NFT, use consume_prize
+            if (capsule.name.startsWith('Prize:')) {
+                console.log('Attempting to unwrap prize:', {
+                    id: capsule.id,
+                    type: capsule.type,
+                    name: capsule.name
+                });
 
-            // Transfer the result to the sender
-            tx.transferObjects([moveCall], tx.pure.address(address!));
+                // Extract the NFT type from the prize info
+                const prizeInfo = JSON.parse(capsule.raw)?.data.content.fields;
+                const nftType = prizeInfo.nft_type?.fields?.name;
 
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: `machine::${functionName}`,
-                args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID], // Using the correct Random object ID
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
+                if (!nftType) {
+                    throw new Error('Could not determine NFT type from prize info');
                 }
-            });
 
-            if (result.effects?.status.status === 'success') {
-                setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
-                // Refresh NFTs after successful redemption
-                await fetchApprovedNFTs();
+                console.log('Using NFT type for unwrap:', nftType);
+
+                const resultObject = tx.moveCall({
+                    target: `${SUI_CONTRACT_ADDRESS}::machine::consume_prize`,
+                    typeArguments: [nftType],
+                    arguments: [
+                        tx.object(capsule.id)
+                    ],
+                });
+
+                // Transfer the returned NFT
+                tx.transferObjects([resultObject], tx.pure.address(address!));
+
+                const result = await callContract({
+                    chain: 'sui',
+                    contractAddress: SUI_CONTRACT_ADDRESS,
+                    method: 'machine::consume_prize',
+                    args: [capsule.id],
+                    options: {
+                        transaction: tx,
+                        gasBudget: 100000000
+                    }
+                });
+
+                console.log('Unwrap transaction result:', result);
+
+                if (!result) {
+                    throw new Error('Transaction failed: No result returned');
+                }
+
+                if (result.effects?.status?.status === 'success') {
+                    setRedeemSuccess(`Successfully unwrapped ${capsule.name}`);
+                    // Refresh NFTs after successful unwrap
+                    await fetchApprovedNFTs();
+                } else {
+                    // Try to get the error from the transaction effects
+                    const error = result.effects?.status?.error;
+                    if (error) {
+                        // If it's a string, use it directly
+                        if (typeof error === 'string') {
+                            throw new Error(error);
+                        }
+                        // If it's an object, try to get the message
+                        if (typeof error === 'object') {
+                            const errorMessage = error.message || error.error || JSON.stringify(error);
+                            throw new Error(errorMessage);
+                        }
+                    }
+                    // If we can't get a specific error, use the full effects for debugging
+                    console.error('Transaction failed with effects:', result.effects);
+                    throw new Error('Transaction failed. Check console for details.');
+                }
             } else {
-                throw new Error('Transaction failed');
+                // For regular capsules, find the actual NFT to trade
+                const nftToTrade = nfts.find(nft =>
+                    nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
+                    nft.name.toLowerCase().includes('gacha')
+                );
+
+                if (!nftToTrade) {
+                    throw new Error('NFT not found');
+                }
+
+                console.log('Attempting to redeem capsule:', {
+                    capsuleId: capsule.id,
+                    nftId: nftToTrade.id,
+                    type: nftToTrade.type
+                });
+
+                const tier = capsule.id.toLowerCase();
+                if (!['common', 'rare', 'epic'].includes(tier)) {
+                    throw new Error(`Invalid tier: ${tier}`);
+                }
+
+                const functionName = `trade_${tier}`;
+
+                const moveCall = tx.moveCall({
+                    target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
+                    arguments: [
+                        tx.object(SUI_MACHINE_ID),
+                        tx.object(nftToTrade.id),
+                        tx.object(SUI_RANDOM_ID)
+                    ],
+                });
+
+                // Transfer the result to the sender
+                tx.transferObjects([moveCall], tx.pure.address(address!));
+
+                const result = await callContract({
+                    chain: 'sui',
+                    contractAddress: SUI_CONTRACT_ADDRESS,
+                    method: `machine::${functionName}`,
+                    args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
+                    options: {
+                        transaction: tx,
+                        gasBudget: 100000000
+                    }
+                });
+
+                console.log('Redeem transaction result:', result);
+
+                if (!result) {
+                    throw new Error('Transaction failed: No result returned');
+                }
+
+                if (result.effects?.status?.status === 'success') {
+                    setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
+                    // Refresh NFTs after successful redemption
+                    await fetchApprovedNFTs();
+                } else {
+                    // Try to get the error from the transaction effects
+                    const error = result.effects?.status?.error;
+                    if (error) {
+                        // If it's a string, use it directly
+                        if (typeof error === 'string') {
+                            throw new Error(error);
+                        }
+                        // If it's an object, try to get the message
+                        if (typeof error === 'object') {
+                            const errorMessage = error.message || error.error || JSON.stringify(error);
+                            throw new Error(errorMessage);
+                        }
+                    }
+                    // If we can't get a specific error, use the full effects for debugging
+                    console.error('Transaction failed with effects:', result.effects);
+                    throw new Error('Transaction failed. Check console for details.');
+                }
             }
         } catch (err) {
             console.error('Redeem error:', err);
@@ -354,6 +486,8 @@ export function Inventory() {
                                     nft.type.includes(approved.module)
                                 );
 
+                                const isPrize = nft.name.startsWith('Prize:');
+
                                 return (
                                     <div key={nft.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
                                         <div className="flex items-center justify-between">
@@ -374,20 +508,45 @@ export function Inventory() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleDonate(nft)}
-                                                disabled={isDonating === nft.id}
-                                                className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <Gift className="w-4 h-4" />
-                                                <span>{isDonating === nft.id ? 'Donating...' : 'Donate'}</span>
-                                            </button>
+                                            {isPrize ? (
+                                                <button
+                                                    onClick={() => handleRedeem({
+                                                        id: nft.id,
+                                                        name: nft.name,
+                                                        imageUrl: nft.imageUrl,
+                                                        collection: nft.collection,
+                                                        type: nft.type,
+                                                        quantity: 1,
+                                                        raw: nft.raw
+                                                    })}
+                                                    disabled={isRedeeming === nft.id}
+                                                    className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <Gift className="w-4 h-4" />
+                                                    <span>{isRedeeming === nft.id ? 'Unwrapping...' : 'Unwrap'}</span>
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleDonate(nft)}
+                                                    disabled={isDonating === nft.id}
+                                                    className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <Gift className="w-4 h-4" />
+                                                    <span>{isDonating === nft.id ? 'Donating...' : 'Donate'}</span>
+                                                </button>
+                                            )}
                                         </div>
                                         {donationError && isDonating === nft.id && (
                                             <p className="text-red-500 text-sm mt-2">{donationError}</p>
                                         )}
                                         {donationSuccess && isDonating === nft.id && (
                                             <p className="text-green-500 text-sm mt-2">{donationSuccess}</p>
+                                        )}
+                                        {redeemError && isRedeeming === nft.id && (
+                                            <p className="text-red-500 text-sm mt-2">{redeemError}</p>
+                                        )}
+                                        {redeemSuccess && isRedeeming === nft.id && (
+                                            <p className="text-green-500 text-sm mt-2">{redeemSuccess}</p>
                                         )}
                                     </div>
                                 );
