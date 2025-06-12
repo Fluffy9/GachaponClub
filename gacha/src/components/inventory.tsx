@@ -220,7 +220,73 @@ export function Inventory() {
 
     const handleRedeem = async (capsule: Capsule) => {
         try {
+            debugger
             setIsRedeeming(capsule.id);
+            setRedeemError(null);
+            setRedeemSuccess(null);
+
+            // For regular capsules, find the actual NFT to trade
+            const nftToTrade = nfts.find(nft =>
+                nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
+                nft.name.toLowerCase().includes('gacha')
+            );
+
+            if (!nftToTrade) {
+                throw new Error('NFT not found');
+            }
+
+            const tier = capsule.id.toLowerCase();
+            if (!['common', 'rare', 'epic'].includes(tier)) {
+                throw new Error(`Invalid tier: ${tier}`);
+            }
+
+            const functionName = `trade_${tier}`;
+
+            // Create a transaction
+            const tx = new Transaction();
+            tx.setSender(address!);
+
+            const moveCall = tx.moveCall({
+                target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
+                arguments: [
+                    tx.object(SUI_MACHINE_ID),
+                    tx.object(nftToTrade.id),
+                    tx.object(SUI_RANDOM_ID)
+                ],
+            });
+
+            // Transfer the result to the sender
+            tx.transferObjects([moveCall], tx.pure.address(address!));
+
+            const result = await callContract({
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: `machine::${functionName}`,
+                args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
+                }
+            });
+
+            if (result.effects?.status?.status === 'success') {
+                setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
+                // Refresh NFTs after successful redemption
+                await fetchApprovedNFTs();
+            } else {
+                throw new Error('Transaction failed');
+            }
+        } catch (err) {
+            console.error('Redeem error:', err);
+            setRedeemError(err instanceof Error ? err.message : 'Failed to redeem capsule');
+        } finally {
+            setIsRedeeming(null);
+        }
+    };
+
+    const handleUnwrap = async (prize: NFT) => {
+        try {
+            setIsRedeeming(prize.id);
             setRedeemError(null);
             setRedeemSuccess(null);
 
@@ -228,153 +294,38 @@ export function Inventory() {
             const tx = new Transaction();
             tx.setSender(address!);
 
-            // If it's a prize NFT, use consume_prize
-            if (capsule.name.startsWith('Prize:')) {
-                console.log('Attempting to unwrap prize:', {
-                    id: capsule.id,
-                    type: capsule.type,
-                    name: capsule.name
-                });
+            const moveCall = tx.moveCall({
+                target: `${SUI_CONTRACT_ADDRESS}::machine::consume_prize`,
+                typeArguments: [prize.type],
+                arguments: [
+                    tx.object(prize.id)
+                ],
+            });
 
-                // Extract the NFT type from the prize info
-                const prizeInfo = JSON.parse(capsule.raw)?.data.content.fields;
-                const nftType = prizeInfo.nft_type?.fields?.name;
+            // Transfer the result to the sender
+            tx.transferObjects([moveCall], tx.pure.address(address!));
 
-                if (!nftType) {
-                    throw new Error('Could not determine NFT type from prize info');
+            const result = await callContract({
+                chain: 'sui',
+                contractAddress: SUI_CONTRACT_ADDRESS,
+                method: 'machine::consume_prize',
+                args: [prize.id],
+                options: {
+                    transaction: tx,
+                    gasBudget: 100000000
                 }
+            });
 
-                console.log('Using NFT type for unwrap:', nftType);
-
-                const resultObject = tx.moveCall({
-                    target: `${SUI_CONTRACT_ADDRESS}::machine::consume_prize`,
-                    typeArguments: [nftType],
-                    arguments: [
-                        tx.object(capsule.id)
-                    ],
-                });
-
-                // Transfer the returned NFT
-                tx.transferObjects([resultObject], tx.pure.address(address!));
-
-                const result = await callContract({
-                    chain: 'sui',
-                    contractAddress: SUI_CONTRACT_ADDRESS,
-                    method: 'machine::consume_prize',
-                    args: [capsule.id],
-                    options: {
-                        transaction: tx,
-                        gasBudget: 100000000
-                    }
-                });
-
-                console.log('Unwrap transaction result:', result);
-
-                if (!result) {
-                    throw new Error('Transaction failed: No result returned');
-                }
-
-                if (result.effects?.status?.status === 'success') {
-                    setRedeemSuccess(`Successfully unwrapped ${capsule.name}`);
-                    // Refresh NFTs after successful unwrap
-                    await fetchApprovedNFTs();
-                } else {
-                    // Try to get the error from the transaction effects
-                    const error = result.effects?.status?.error;
-                    if (error) {
-                        // If it's a string, use it directly
-                        if (typeof error === 'string') {
-                            throw new Error(error);
-                        }
-                        // If it's an object, try to get the message
-                        if (typeof error === 'object') {
-                            const errorMessage = error.message || error.error || JSON.stringify(error);
-                            throw new Error(errorMessage);
-                        }
-                    }
-                    // If we can't get a specific error, use the full effects for debugging
-                    console.error('Transaction failed with effects:', result.effects);
-                    throw new Error('Transaction failed. Check console for details.');
-                }
+            if (result.effects?.status?.status === 'success') {
+                setRedeemSuccess(`Successfully unwrapped ${prize.name}`);
+                // Refresh NFTs after successful unwrap
+                await fetchApprovedNFTs();
             } else {
-                // For regular capsules, find the actual NFT to trade
-                const nftToTrade = nfts.find(nft =>
-                    nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
-                    nft.name.toLowerCase().includes('gacha')
-                );
-
-                if (!nftToTrade) {
-                    throw new Error('NFT not found');
-                }
-
-                console.log('Attempting to redeem capsule:', {
-                    capsuleId: capsule.id,
-                    nftId: nftToTrade.id,
-                    type: nftToTrade.type
-                });
-
-                const tier = capsule.id.toLowerCase();
-                if (!['common', 'rare', 'epic'].includes(tier)) {
-                    throw new Error(`Invalid tier: ${tier}`);
-                }
-
-                const functionName = `trade_${tier}`;
-
-                const moveCall = tx.moveCall({
-                    target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
-                    arguments: [
-                        tx.object(SUI_MACHINE_ID),
-                        tx.object(nftToTrade.id),
-                        tx.object(SUI_RANDOM_ID)
-                    ],
-                });
-
-                // Transfer the result to the sender
-                tx.transferObjects([moveCall], tx.pure.address(address!));
-
-                const result = await callContract({
-                    chain: 'sui',
-                    contractAddress: SUI_CONTRACT_ADDRESS,
-                    method: `machine::${functionName}`,
-                    args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
-                    options: {
-                        transaction: tx,
-                        gasBudget: 100000000
-                    }
-                });
-
-                console.log('Redeem transaction result:', result);
-
-                if (!result) {
-                    throw new Error('Transaction failed: No result returned');
-                }
-
-                if (result.effects?.status?.status === 'success') {
-                    setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
-                    // Refresh NFTs after successful redemption
-                    await fetchApprovedNFTs();
-                } else {
-                    // Try to get the error from the transaction effects
-                    const error = result.effects?.status?.error;
-                    if (error) {
-                        // If it's a string, use it directly
-                        if (typeof error === 'string') {
-                            throw new Error(error);
-                        }
-                        // If it's an object, try to get the message
-                        if (typeof error === 'object') {
-                            const errorMessage = error.message || error.error || JSON.stringify(error);
-                            throw new Error(errorMessage);
-                        }
-                    }
-                    // If we can't get a specific error, use the full effects for debugging
-                    console.error('Transaction failed with effects:', result.effects);
-                    throw new Error('Transaction failed. Check console for details.');
-                }
+                throw new Error('Transaction failed');
             }
         } catch (err) {
-            console.error('Redeem error:', err);
-            setRedeemError(err instanceof Error ? err.message : 'Failed to redeem capsule');
+            console.error('Unwrap error:', err);
+            setRedeemError(err instanceof Error ? err.message : 'Failed to unwrap prize');
         } finally {
             setIsRedeeming(null);
         }
@@ -455,12 +406,21 @@ export function Inventory() {
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => handleRedeem(capsule)}
+                                            onClick={() => capsule.name.startsWith('Prize:') ? handleUnwrap(capsule) : handleRedeem(capsule)}
                                             disabled={isRedeeming === capsule.id || capsule.quantity === 0}
                                             className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            <RefreshCw className="w-4 h-4" />
-                                            <span>{isRedeeming === capsule.id ? 'Redeeming...' : 'Redeem'}</span>
+                                            {capsule.name.startsWith('Prize:') ? (
+                                                <>
+                                                    <Gift className="w-4 h-4" />
+                                                    <span>{isRedeeming === capsule.id ? 'Unwrapping...' : 'Unwrap'}</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <RefreshCw className="w-4 h-4" />
+                                                    <span>{isRedeeming === capsule.id ? 'Redeeming...' : 'Redeem'}</span>
+                                                </>
+                                            )}
                                         </button>
                                     </div>
                                     {redeemError && isRedeeming === capsule.id && (
@@ -510,15 +470,7 @@ export function Inventory() {
                                             </div>
                                             {isPrize ? (
                                                 <button
-                                                    onClick={() => handleRedeem({
-                                                        id: nft.id,
-                                                        name: nft.name,
-                                                        imageUrl: nft.imageUrl,
-                                                        collection: nft.collection,
-                                                        type: nft.type,
-                                                        quantity: 1,
-                                                        raw: nft.raw
-                                                    })}
+                                                    onClick={() => handleUnwrap(nft)}
                                                     disabled={isRedeeming === nft.id}
                                                     className="px-3 py-1.5 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
