@@ -32,18 +32,16 @@ export function getImageUrl(path: string): string {
     return `${BASE_IMAGE_URL}/${path}`;
 }
 
-
-
 // Contract addresses
-export const SUI_RANDOM_ID = "0x8";//'0x0000000000000000000000000000000000000000000000000000000000000006';
-export const SUI_CONTRACT_ADDRESS = '0xdc6e2126390151ffa14d99e414cf821a3ef640acdf6f4891e3e570b55c4228bc';
-export const SUI_MACHINE_ID = '0xc431b31498d0b958f711aac265cf6ed75efb2292f0d6fc8b68ef98831f9ac64d';
-export const SUI_MINTER_CAP_ID = '0xba0a83c81c76ffb6cef3ad6161e157ef6d0577f846ac20afe31d8d2636d9fe68';
-export const SUI_ADMIN_CAP_ID = '0x2396c232f61722638121eff662ed101298aefd0d88f87a83eda6cf6f1c3eb9e1';
-export const SUI_UPGRADE_CAP_ID = '0x6baf6c442d4ad9921b5d8f85174b966dc356f36ccc55d3bcf17d2d58989cfd92';
+export const SUI_RANDOM_ID = "0x8";
+export const SUI_CONTRACT_ADDRESS = '0xe3edc9895b8861ba67639e74fef65a7ab0fb238c8b62ad20d60747d55b8f9a60';
+export const SUI_MACHINE_ID = '0x68c39c5fa341a9651f14b9e2db6a000c47fee9eca4c560eb901be46666d509ba';
+export const SUI_MINTER_CAP_ID = '0xeb4e315b2fa5012962345830af55c31505725545362ab13253e74804c3a87270';
+export const SUI_ADMIN_CAP_ID = '0xc35810e7c5ef2ed02d5dc92ce315b1292ba59392fae0a6f88cb237ff95fb85a1';
+export const SUI_UPGRADE_CAP_ID = '0x39a8368814a477495d58ee5a0cf1556883beda89da90830398624c9e9afafdc6';
 export const ETH_CONTRACT_ADDRESS = "0x1234567890123456789012345678901234567890";
 
-
+// Store old addresses for reference
 export const OLD_SUI_RANDOM_ID = "0x8";
 export const OLD_SUI_CONTRACT_ADDRESS = "0xf9a4dc2f10f074c4618b44552e49b4da03af76fdcfcc1c16ab01478d6bad92e0";
 export const OLD_SUI_MACHINE_ID = "0xad84024ea47de50acc6bea74f6dfd966591c3b6a467201e52d6805b6b91a51e1";
