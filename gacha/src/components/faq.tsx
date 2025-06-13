@@ -17,7 +17,7 @@ const faqItems: FAQItem[] = [
   {
     question: "How do the different capsule types work?",
     answer:
-      "As of right now, there are 3 capsules: Common (light blue), Rare (pink), and Epic (pastel gold). Select the capsule and complete the purchase to turn the handle and receive a Gachapon Club Capsule NFT. Each tier allows you to win rarer and more valuable NFT collectibles.",
+      "As of right now, there are 3 capsules: Common (light blue), Rare (pink), and Epic (pastel gold). Select the capsule and complete the purchase to receive a Gachapon Club Capsule NFT. Each tier allows you to win rarer and more valuable NFT collectibles.",
   },
   {
     question: "Can I sell my capsule?",

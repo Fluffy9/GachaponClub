@@ -122,6 +122,53 @@ const sampleItems = {
     }
 }
 
+const Partners = () => {
+    return (
+        <div className="w-full max-w-6xl px-4 py-12">
+            <motion.h2
+                variants={item}
+                className="text-2xl font-bold text-center mb-8 text-[#b480e4] dark:text-[#c99df0] transition-colors duration-300"
+            >
+                Our Partners
+            </motion.h2>
+            <div className="flex justify-center items-center gap-12 flex-wrap">
+                <motion.a
+                    href="https://atlantachain.io"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variants={fadeInUp}
+                    initial="hidden"
+                    animate="show"
+                    whileHover={{ scale: 1.05 }}
+                    className="transition-transform"
+                >
+                    <img
+                        src="/ABC_logo2.png"
+                        alt="Atlanta Blockchain Center"
+                        className="h-16 object-contain"
+                    />
+                </motion.a>
+                <motion.a
+                    href="https://raidguild.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variants={fadeInUp}
+                    initial="hidden"
+                    animate="show"
+                    whileHover={{ scale: 1.05 }}
+                    className="transition-transform"
+                >
+                    <img
+                        src="/RaidGuild.png"
+                        alt="RaidGuild"
+                        className="h-16 object-contain"
+                    />
+                </motion.a>
+            </div>
+        </div>
+    );
+};
+
 export default function Home() {
     const { isConnected, address, callContract, connect, walletType } = useWallet();
     const suiClient = useMemo(() => new SuiClient({
@@ -450,12 +497,22 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* FAQ Section */}
+            {/* Partners Section */}
             <motion.div
                 variants={fadeInUp}
                 initial="hidden"
                 animate="show"
                 transition={{ delay: 0.6 }}
+            >
+                <Partners />
+            </motion.div>
+
+            {/* FAQ Section */}
+            <motion.div
+                variants={fadeInUp}
+                initial="hidden"
+                animate="show"
+                transition={{ delay: 0.7 }}
                 className="w-full max-w-6xl px-4 py-12"
             >
                 <motion.h2
@@ -472,7 +529,7 @@ export default function Home() {
                 variants={fadeInUp}
                 initial="hidden"
                 animate="show"
-                transition={{ delay: 0.7 }}
+                transition={{ delay: 0.8 }}
                 className="text-center text-sm text-gray-600 dark:text-gray-400 mt-auto mb-12 transition-colors duration-300"
             >
                 <p className="pixel-text">Made with 💖 by <a href="https://github.com/Fluffy9" className="text-[#b480e4] dark:text-[#c99df0] pixel-text">Pupcakes</a></p>
