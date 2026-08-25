@@ -66,12 +66,35 @@ export const PRICES = {
     EPIC: 10000000000   // 10 SUI
 };
 
-// Prices in Wei (1 ETH = 1_000_000_000_000_000_000 Wei)
-export const ETH_PRICES = {
-    COMMON: "2000000000000000000", // 2 ETH
-    RARE: "6000000000000000000",   // 6 ETH
-    EPIC: "12000000000000000000"   // 12 ETH
-};
+// EVM capsule prices in wei. L2 (Arb / OP / Base) uses the contract defaults.
+// Ethereum mainnet is 10x so VRF + NFT callback gas stays in range of the ticket.
+const EVM_PRICES_L2 = {
+    COMMON: "10000000000000000",  // 0.01 ETH
+    RARE: "50000000000000000",    // 0.05 ETH
+    EPIC: "100000000000000000"    // 0.1 ETH
+} as const;
+
+const EVM_PRICES_ETH_MAINNET = {
+    COMMON: "100000000000000000",  // 0.1 ETH
+    RARE: "500000000000000000",    // 0.5 ETH
+    EPIC: "1000000000000000000"    // 1 ETH
+} as const;
+
+export const EVM_CHAIN_IDS = {
+    ETHEREUM: 1,
+    OP: 10,
+    BASE: 8453,
+    ARBITRUM: 42161
+} as const;
+
+export function getEvmPrices(chainId: number) {
+    return chainId === EVM_CHAIN_IDS.ETHEREUM
+        ? EVM_PRICES_ETH_MAINNET
+        : EVM_PRICES_L2;
+}
+
+/** @deprecated Use getEvmPrices(chainId). Defaults to L2 prices. */
+export const ETH_PRICES = EVM_PRICES_L2;
 
 // NFT Metadata
 export const NFT_METADATA = {

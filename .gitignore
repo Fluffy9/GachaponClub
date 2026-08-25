@@ -1,7 +1,18 @@
 # Dependencies
 node_modules
 .pnpm-store
-evm
+
+# EVM Foundry build artifacts, deps, and deployer keys
+evm/cache/
+evm/out/
+evm/broadcast/
+evm/.deploy/
+evm/.env
+evm/lib/
+
+# Build outputs
+dist
+build
 
 # Build outputs
 dist

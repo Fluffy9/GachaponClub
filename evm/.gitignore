@@ -1,0 +1,15 @@
+# Compiler files
+cache/
+out/
+
+# Broadcast logs (fork estimates look like mainnet; add real ones explicitly)
+broadcast/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+
+# Ephemeral deployer key from script/ship.sh
+.deploy/
