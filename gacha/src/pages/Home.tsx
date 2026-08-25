@@ -12,7 +12,7 @@ import { usePopup } from "../components/ui/popup-provider"
 import { WalletPopup } from "../components/wallet-popup"
 import {
     SUI_CONTRACT_ADDRESS,
-    ETH_CONTRACT_ADDRESS,
+    EVM_MACHINE_ADDRESS,
     SUI_MACHINE_ID,
     SUI_MINTER_CAP_ID,
     PRICES,
@@ -20,13 +20,15 @@ import {
     NFT_METADATA,
     CONTRACT_METHODS,
     SUI_ADMIN_CAP_ID,
-    NETWORK
+    NETWORK,
+    EVM_RARITY_ID
 } from "../lib/constants"
 import { toast, Toaster } from 'sonner';
 import { hasSufficientBalance, formatSui } from "../lib/utils";
 import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import type { SuiTransactionBlockResponse } from '@mysten/sui/client';
+import { formatEth } from "../lib/evm";
 
 type CapsuleType = 'common' | 'rare' | 'epic';
 type CapsuleTypeUpper = 'COMMON' | 'RARE' | 'EPIC';
@@ -170,7 +172,7 @@ const Partners = () => {
 };
 
 export default function Home() {
-    const { isConnected, address, callContract, connect, walletType } = useWallet();
+    const { isConnected, address, callContract, walletType, evmRarities } = useWallet();
     const suiClient = useMemo(() => new SuiClient({
         url: 'https://fullnode.testnet.sui.io:443'
     }), []);
@@ -237,12 +239,29 @@ export default function Home() {
     const handleCapsuleClick = useCallback(async (type: CapsuleType) => {
         try {
             if (!isConnected) {
-                await connect('sui');
+                openPopup(<WalletPopup />, "Your Wallet");
                 return;
             }
 
             setIsMinting(true);
             setError(null);
+
+            if (walletType === 'eth') {
+                const rarityId = EVM_RARITY_ID[type];
+                const rarity = evmRarities.find((item) => item.id === rarityId);
+                if (!rarity) {
+                    throw new Error('Price not available');
+                }
+                await callContract({
+                    chain: 'eth',
+                    contractAddress: EVM_MACHINE_ADDRESS,
+                    method: 'purchase',
+                    args: [BigInt(rarityId)],
+                    options: { value: rarity.price },
+                });
+                toast.success('Capsule purchased');
+                return;
+            }
 
             const price = prices[type];
             if (!price) {
@@ -250,10 +269,6 @@ export default function Home() {
             }
 
             const method = CONTRACT_METHODS.SUI[type.toUpperCase() as CapsuleTypeUpper];
-            // IMPORTANT: Argument order must be [machine, payment]
-            // - machine: The mutable machine object (SUI_MACHINE_ID)
-            // - payment: The payment amount in MIST (BigInt)
-            // DO NOT CHANGE THIS ORDER - it matches the Move contract function signature
             await callContract({
                 chain: 'sui',
                 contractAddress: SUI_CONTRACT_ADDRESS,
@@ -269,7 +284,7 @@ export default function Home() {
         } finally {
             setIsMinting(false);
         }
-    }, [isConnected, connect, prices, callContract]);
+    }, [isConnected, walletType, prices, callContract, evmRarities, openPopup]);
 
     useEffect(() => {
         if (isConnected) {
@@ -303,6 +318,28 @@ export default function Home() {
             </div>
         );
     }, [isConnected, handleCapsuleClick, isMinting, error]);
+
+    const priceShimmer = (
+        <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]"
+                style={{
+                    backgroundSize: '200% 100%',
+                    imageRendering: 'pixelated'
+                }}
+            />
+        </div>
+    );
+
+    const renderPrice = (type: CapsuleType) => {
+        if (walletType === 'sui') {
+            const price = prices[type];
+            if (!price) return priceShimmer;
+            return <PriceTag price={`${price / 1_000_000_000} SUI`} />;
+        }
+        const rarity = evmRarities.find((item) => item.id === EVM_RARITY_ID[type]);
+        if (!rarity) return priceShimmer;
+        return <PriceTag price={formatEth(rarity.price)} />;
+    };
 
     return (
         <main className="min-h-screen flex flex-col items-center bg-pattern">
@@ -374,26 +411,7 @@ export default function Home() {
                             />
                         </div>
                         <div className="mt-4">
-                            {isConnected ? (
-                                walletType === 'sui' ? (
-                                    prices.common ? (
-                                        <PriceTag price={`${prices.common / 1_000_000_000} SUI`} />
-                                    ) : (
-                                        <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded relative overflow-hidden">
-                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]"
-                                                style={{
-                                                    backgroundSize: '200% 100%',
-                                                    imageRendering: 'pixelated'
-                                                }}
-                                            />
-                                        </div>
-                                    )
-                                ) : (
-                                    <PriceTag price={prices.common ? `${prices.common / 1_000_000_000} ETH` : '0 ETH'} />
-                                )
-                            ) : (
-                                <PriceTag price="Connect to view" />
-                            )}
+                            {renderPrice('common')}
                         </div>
                     </motion.div>
 
@@ -423,26 +441,7 @@ export default function Home() {
                             />
                         </div>
                         <div className="mt-4">
-                            {isConnected ? (
-                                walletType === 'sui' ? (
-                                    prices.rare ? (
-                                        <PriceTag price={`${prices.rare / 1_000_000_000} SUI`} />
-                                    ) : (
-                                        <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded relative overflow-hidden">
-                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]"
-                                                style={{
-                                                    backgroundSize: '200% 100%',
-                                                    imageRendering: 'pixelated'
-                                                }}
-                                            />
-                                        </div>
-                                    )
-                                ) : (
-                                    <PriceTag price={prices.rare ? `${prices.rare / 1_000_000_000} ETH` : '0 ETH'} />
-                                )
-                            ) : (
-                                <PriceTag price="Connect to view" />
-                            )}
+                            {renderPrice('rare')}
                         </div>
                     </motion.div>
 
@@ -472,26 +471,7 @@ export default function Home() {
                             />
                         </div>
                         <div className="mt-4">
-                            {isConnected ? (
-                                walletType === 'sui' ? (
-                                    prices.epic ? (
-                                        <PriceTag price={`${prices.epic / 1_000_000_000} SUI`} />
-                                    ) : (
-                                        <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded relative overflow-hidden">
-                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]"
-                                                style={{
-                                                    backgroundSize: '200% 100%',
-                                                    imageRendering: 'pixelated'
-                                                }}
-                                            />
-                                        </div>
-                                    )
-                                ) : (
-                                    <PriceTag price={prices.epic ? `${prices.epic / 1_000_000_000} ETH` : '0 ETH'} />
-                                )
-                            ) : (
-                                <PriceTag price="Connect to view" />
-                            )}
+                            {renderPrice('epic')}
                         </div>
                     </motion.div>
                 </div>

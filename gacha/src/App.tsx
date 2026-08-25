@@ -16,18 +16,22 @@ import NotFound from './pages/404';
 import './index.css';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
+import { http } from 'viem';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { mainnet, polygon } from 'wagmi/chains';
+import { base } from 'wagmi/chains';
 import '@rainbow-me/rainbowkit/styles.css';
 import { WalletProvider } from './components/providers/wallet-provider';
-import { Navigation } from './components/navigation';
-import { WalletButton } from './components/wallet-button';
 import { AdminNav } from './components/admin-nav';
+import { BASE_RPC_URL, WALLETCONNECT_PROJECT_ID } from './lib/constants';
 
 const config = getDefaultConfig({
   appName: 'Gachapon Club',
-  projectId: 'e151333bb1826587cfaf15c54011854a',
-  chains: [mainnet, polygon],
+  projectId: WALLETCONNECT_PROJECT_ID,
+  chains: [base],
+  ssr: false,
+  transports: {
+    [base.id]: http(BASE_RPC_URL),
+  },
 });
 
 const queryClient = new QueryClient();

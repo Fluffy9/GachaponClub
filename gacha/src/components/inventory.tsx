@@ -2,10 +2,11 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useWallet } from './providers/wallet-provider';
 import { Wallet, Gift, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import type { NFT, RawPrizeInfo } from '../lib/wallet-context';
-import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl } from '../lib/constants';
+import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl, EVM_MACHINE_ADDRESS, EVM_NFT_ADDRESSES, EVM_RARITY_ID } from '../lib/constants';
 import { Transaction } from '@mysten/sui/transactions';
 import { toast } from 'sonner';
 import { formatAddress } from '../lib/utils';
+import { getEvmClaimCount, isCapsuleApproved } from '../lib/evm';
 
 interface Capsule extends NFT {
     quantity: number;
@@ -73,6 +74,18 @@ export function Inventory() {
         if (address) {
             const fetchData = async () => {
                 try {
+                    if (walletType === 'eth') {
+                        let pending = await getEvmClaimCount(address as `0x${string}`);
+                        while (pending > 0) {
+                            await callContract({
+                                chain: 'eth',
+                                contractAddress: EVM_MACHINE_ADDRESS,
+                                method: 'claim',
+                                args: [0n],
+                            });
+                            pending -= 1;
+                        }
+                    }
                     await Promise.all([
                         fetchApprovedNFTs(),
                         fetchPrizePool(),
@@ -84,14 +97,16 @@ export function Inventory() {
             };
             fetchData();
         }
-    }, [address, activeTab]);
+    }, [address, activeTab, walletType]);
 
     // Filter NFTs into capsules and other NFTs
     const { capsules, otherNfts } = useMemo(() => {
         const gachaCapsules = nfts.filter(nft =>
-            (nft.name.toLowerCase().includes('gacha') ||
-                nft.collection === 'Gacha Capsules') &&
-            nft.type?.startsWith(SUI_CONTRACT_ADDRESS)
+            walletType === 'eth'
+                ? nft.collection === 'Gacha Capsules'
+                : (nft.name.toLowerCase().includes('gacha') ||
+                    nft.collection === 'Gacha Capsules') &&
+                nft.type?.startsWith(SUI_CONTRACT_ADDRESS)
         );
 
         // Filter other NFTs to only show approved ones
@@ -132,7 +147,7 @@ export function Inventory() {
 
         const otherNfts = [...filteredNfts, ...prizeInfos];
         return { capsules: gachaCapsules, otherNfts };
-    }, [nfts, approvedNFTs]);
+    }, [nfts, approvedNFTs, walletType]);
 
     // Group capsules by name and count quantities
     const uniqueCapsules = useMemo(() => {
@@ -303,6 +318,66 @@ export function Inventory() {
             setIsRedeeming(capsule.id);
             setRedeemError(null);
             setRedeemSuccess(null);
+
+            if (walletType === 'eth') {
+                if (!address) {
+                    throw new Error('Wallet not connected');
+                }
+                const rarityKey = capsule.id as keyof typeof EVM_RARITY_ID;
+                const rarityId = EVM_RARITY_ID[rarityKey];
+                const nftAddress = EVM_NFT_ADDRESSES[rarityKey.toUpperCase() as keyof typeof EVM_NFT_ADDRESSES];
+                if (rarityId === undefined || !nftAddress) {
+                    throw new Error(`Invalid capsule: ${capsule.id}`);
+                }
+
+                const approved = await isCapsuleApproved(address as `0x${string}`, nftAddress);
+                if (!approved) {
+                    toast.message('Approve the machine to open this capsule');
+                    await callContract({
+                        chain: 'eth',
+                        contractAddress: nftAddress,
+                        method: 'setApprovalForAll',
+                        args: [EVM_MACHINE_ADDRESS, true],
+                    });
+                }
+
+                const before = await getEvmClaimCount(address as `0x${string}`);
+                await callContract({
+                    chain: 'eth',
+                    contractAddress: EVM_MACHINE_ADDRESS,
+                    method: 'play',
+                    args: [BigInt(rarityId)],
+                });
+                toast.message('Draw requested — waiting for Chainlink VRF');
+
+                let claimed = false;
+                for (let i = 0; i < 40; i++) {
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                    const count = await getEvmClaimCount(address as `0x${string}`);
+                    if (count > before) {
+                        await callContract({
+                            chain: 'eth',
+                            contractAddress: EVM_MACHINE_ADDRESS,
+                            method: 'claim',
+                            args: [0n],
+                        });
+                        claimed = true;
+                        break;
+                    }
+                }
+
+                if (!claimed) {
+                    throw new Error('Draw is still pending. Open inventory again in a moment to claim.');
+                }
+
+                setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
+                toast.success(`Successfully redeemed ${capsule.name}`);
+                await Promise.all([
+                    fetchPrizePool(),
+                    fetchNFTs(address),
+                ]);
+                return;
+            }
 
             // For regular capsules, find the actual NFT to trade
             const nftToTrade = nfts.find(nft => {
@@ -609,7 +684,7 @@ export function Inventory() {
                             {formatAddress(address || '')}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {walletType === 'sui' ? 'Sui' : walletType === 'eth' ? 'Ethereum' : ''} • {chain}
+                            {walletType === 'sui' ? 'Sui' : walletType === 'eth' ? 'Base' : ''} • {chain}
                         </p>
                     </div>
                 </div>

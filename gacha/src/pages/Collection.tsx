@@ -6,8 +6,6 @@ import { GachaCapsule } from "../components/gacha-capsule"
 import { Navigation } from "../components/navigation"
 import { ThemeToggle } from "../components/theme-toggle"
 import { getImageUrl } from '../lib/constants';
-import { ConnectButton } from '@suiet/wallet-kit';
-import { WalletConnectionPrompt } from '../components/wallet-connection-prompt';
 
 const fadeInLeft: Variants = {
     hidden: { opacity: 0, x: -20 },
@@ -153,7 +151,7 @@ function Pagination({ totalItems, currentPage, onPageChange }: { totalItems: num
 }
 
 export default function Collection() {
-    const { prizePool, fetchPrizePool, address } = useWallet();
+    const { prizePool, fetchPrizePool } = useWallet();
     const [currentPage, setCurrentPage] = useState(1);
     const [gridCols, setGridCols] = useState(3);
     const [showPopups, setShowPopups] = useState(true);
@@ -166,31 +164,19 @@ export default function Collection() {
     // Debug logging for component state
     useEffect(() => {
         console.log('Collection component state:', {
-            address,
             prizePoolLength: prizePool?.length,
             currentPage,
             gridCols
         });
-    }, [address, prizePool, currentPage, gridCols]);
+    }, [prizePool, currentPage, gridCols]);
 
-    // Fetch prize pool data
     useEffect(() => {
-        const fetchData = async () => {
-            if (!address) {
-                console.log('No address available, skipping fetch');
-                return;
-            }
-            console.log('Starting prize pool fetch...');
-            try {
-                await fetchPrizePool();
-                console.log('Prize pool fetch completed');
-            } catch (error) {
-                console.error('Error fetching prize pool:', error);
-            }
-        };
-
-        fetchData();
-    }, [address]);
+        fetchPrizePool().catch((error) => {
+            console.error('Error fetching prize pool:', error);
+        });
+        // Public Base reads do not need a wallet.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Calculate visible prizes for current page
     const itemsPerPage = 9;
@@ -327,9 +313,7 @@ export default function Collection() {
 
                 {/* Main Content - Capsule Collection */}
                 <div className="mt-16 mb-20">
-                    {!address ? (
-                        <WalletConnectionPrompt message="Connect your wallet to view the Machine collection" />
-                    ) : prizePool.length === 0 ? (
+                    {prizePool.length === 0 ? (
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -409,7 +393,7 @@ export default function Collection() {
                         </AnimatePresence>
                     )}
 
-                    {address && prizePool.length > 0 && (
+                    {prizePool.length > 0 && (
                         <Pagination
                             totalItems={prizePool.length}
                             currentPage={currentPage}

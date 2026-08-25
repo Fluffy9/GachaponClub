@@ -1,22 +1,33 @@
 "use client"
 
 import { useWallet } from "../components/providers/wallet-provider"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
 import { ThemeToggle } from "../components/theme-toggle"
-import { WalletConnectionPrompt } from "../components/wallet-connection-prompt"
+import { Navigation } from "../components/navigation"
+import { WalletPopup } from "../components/wallet-popup"
+import { usePopup } from "../components/ui/popup-provider"
 import {
-    SUI_CONTRACT_ADDRESS,
-    SUI_MACHINE_ID,
-    SUI_ADMIN_CAP_ID,
-    EXPLORER_URL,
-    NFT_MODULES,
+    EVM_MACHINE_ADDRESS,
+    EVM_NFT_ADDRESSES,
+    EVM_RARITY_ID,
+    BASE_EXPLORER_URL,
     getImageUrl
 } from "../lib/constants"
-import { AlertCircle, Wallet, Coins, Package, Settings, ArrowUpRight, ArrowDownLeft, Upload } from "lucide-react"
+import { AlertCircle, Wallet, Coins, Settings, ArrowUpRight, ArrowDownLeft } from "lucide-react"
 import { toast, Toaster } from 'sonner'
-import { formatSUI } from "@suiet/wallet-kit"
-import { Transaction } from "@mysten/sui/transactions"
+import { parseEther, isAddress, type Address, zeroAddress, formatEther } from 'viem'
+import {
+    formatEth,
+    fetchEvmRarities,
+    fetchEvmMachineStats,
+    fetchEvmApprovedNfts,
+    isEvmAdmin,
+    type EvmRarity,
+    type EvmMachineStats,
+    type EvmApprovedNft,
+    type PrizeType,
+} from "../lib/evm"
 
 const container = {
     hidden: { opacity: 0, y: 20 },
@@ -43,432 +54,243 @@ const item = {
     }
 }
 
+const emptyStats: EvmMachineStats = {
+    treasuryBalance: 0n,
+    totalPlays: 0,
+    commonMints: 0,
+    rareMints: 0,
+    epicMints: 0,
+    commonPrizes: 0,
+    rarePrizes: 0,
+    epicPrizes: 0,
+}
+
 export default function Admin() {
-    const { walletType, isConnected, callContract, suiClient, freeMintNFT, address, suiWallet, approvedNFTs, fetchApprovedNFTs } = useWallet();
+    const { isConnected, callContract, address, walletType, evmRarities, fetchPrizePool } = useWallet();
+    const { openPopup } = usePopup();
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-    const [machineStats, setMachineStats] = useState({
-        totalPlays: 0,
-        commonMints: 0,
-        rareMints: 0,
-        epicMints: 0,
-        treasuryBalance: BigInt(0)
-    });
+    const [machineStats, setMachineStats] = useState<EvmMachineStats>(emptyStats);
+    const [rarities, setRarities] = useState<EvmRarity[]>([]);
+    const [approvedNfts, setApprovedNfts] = useState<EvmApprovedNft[]>([]);
+    const [isAdmin, setIsAdmin] = useState(false);
     const [newNFTType, setNewNFTType] = useState("");
-    const [newNFTTier, setNewNFTTier] = useState("common");
-    const [activeTab, setActiveTab] = useState<'nfts' | 'withdraw' | 'settings' | 'free'>('nfts');
-    const [prices, setPrices] = useState({
-        common: 2,
-        rare: 6,
-        epic: 12
-    });
-    const [adminAddress, setAdminAddress] = useState<string | null>(null);
-    const [freeNFTs, setFreeNFTs] = useState<Array<{
-        name: string;
-        imageUrl: string;
-        type: 'bear' | 'cat' | 'unicorn';
-    }>>([
-        {
-            name: "Bear NFT",
-            imageUrl: getImageUrl("https://gachapon.club/bear.png"),
-            type: 'bear'
-        },
-        {
-            name: "Cat NFT",
-            imageUrl: getImageUrl("https://gachapon.club/cat.png"),
-            type: 'cat'
-        },
-        {
-            name: "Unicorn NFT",
-            imageUrl: getImageUrl("https://gachapon.club/unicorn.png"),
-            type: 'unicorn'
-        }
-    ]);
+    const [newNFTTier, setNewNFTTier] = useState<PrizeType>("common");
+    const [activeTab, setActiveTab] = useState<'nfts' | 'withdraw' | 'settings'>('nfts');
+    const [prices, setPrices] = useState({ common: 0.01, rare: 0.05, epic: 0.1 });
+    const [vrfFund, setVrfFund] = useState("0.005");
+    const [newAdmin, setNewAdmin] = useState("");
+    const [redeemRarity, setRedeemRarity] = useState<PrizeType>("common");
 
     useEffect(() => {
         document.title = "Admin Dashboard | Gachapon Club"
     }, []);
 
-    const fetchPrices = async () => {
+    const refresh = useCallback(async () => {
         try {
-            const machine = await suiClient.getObject({
-                id: SUI_MACHINE_ID,
-                options: { showContent: true }
-            });
-
-            if (machine.data?.content?.dataType === 'moveObject') {
-                const fields = machine.data.content.fields as {
-                    common_price: string;
-                    rare_price: string;
-                    epic_price: string;
-                };
-                setPrices({
-                    common: Number(fields.common_price) / 1_000_000_000,
-                    rare: Number(fields.rare_price) / 1_000_000_000,
-                    epic: Number(fields.epic_price) / 1_000_000_000
-                });
-            }
-        } catch (err) {
-            console.error('Failed to fetch prices:', err);
-            setError(err instanceof Error ? err.message : 'Failed to fetch prices');
-        }
-    };
-
-    const fetchMachineStats = async () => {
-        try {
-            const machine = await suiClient.getObject({
-                id: SUI_MACHINE_ID,
-                options: { showContent: true }
-            });
-
-            if (machine.data?.content?.dataType === 'moveObject') {
-                const fields = machine.data.content.fields as {
-                    total_plays: string;
-                    common_mints: string;
-                    rare_mints: string;
-                    epic_mints: string;
-                    treasury: { fields: { balance: string } };
-                };
-                setMachineStats({
-                    totalPlays: fields.total_plays ? Number(fields.total_plays) : 0,
-                    commonMints: fields.common_mints ? Number(fields.common_mints) : 0,
-                    rareMints: fields.rare_mints ? Number(fields.rare_mints) : 0,
-                    epicMints: fields.epic_mints ? Number(fields.epic_mints) : 0,
-                    treasuryBalance: fields.treasury.fields.balance ? BigInt(fields.treasury.fields.balance) : BigInt(0)
-                });
-            }
-        } catch (err) {
-            console.error('Failed to fetch machine stats:', err);
-            toast.error('Failed to fetch machine stats');
-        }
-    };
-
-    const fetchAdminAddress = async () => {
-        try {
-            const adminCap = await suiClient.getObject({
-                id: SUI_ADMIN_CAP_ID,
-                options: {
-                    showContent: true,
-                    showOwner: true
+            const [stats, onChainRarities, approved] = await Promise.all([
+                fetchEvmMachineStats(),
+                fetchEvmRarities(),
+                fetchEvmApprovedNfts(),
+            ]);
+            setMachineStats(stats);
+            setRarities(onChainRarities);
+            setApprovedNfts(approved);
+            const nextPrices = { common: 0.01, rare: 0.05, epic: 0.1 };
+            for (const rarity of onChainRarities) {
+                const key = rarity.name.toLowerCase() as keyof typeof nextPrices;
+                if (key in nextPrices) {
+                    nextPrices[key] = Number(formatEther(rarity.price));
                 }
-            });
-
-            console.log('Admin Cap Object:', JSON.stringify(adminCap, null, 2));
-
-            if (adminCap.data?.content?.dataType === 'moveObject') {
-                const fields = adminCap.data.content.fields as {
-                    id: { id: string }
-                };
-                // Get the object's owner from the object data
-                const owner = adminCap.data.owner;
-                console.log('Owner:', owner);
-
-                if (owner && typeof owner === 'object' && 'AddressOwner' in owner) {
-                    setAdminAddress(owner.AddressOwner);
-                } else {
-                    console.error('Admin cap owner structure:', owner);
-                    toast.error('Failed to fetch admin address: Invalid owner type');
-                }
-            } else {
-                console.error('Admin cap data structure:', adminCap.data);
-                toast.error('Failed to fetch admin address: Invalid object type');
             }
+            setPrices(nextPrices);
         } catch (err) {
-            console.error('Failed to fetch admin address:', err);
-            toast.error('Failed to fetch admin address');
+            console.error('Failed to load Base admin data:', err);
+            toast.error('Failed to load Base machine data');
         }
-    };
+    }, []);
 
     useEffect(() => {
-        if (isConnected) {
-            const fetchData = async () => {
-                await Promise.all([
-                    fetchPrices(),
-                    fetchMachineStats(),
-                    fetchAdminAddress(),
-                    fetchApprovedNFTs()
-                ]);
-            };
-            fetchData();
-        }
-    }, [isConnected]);
+        refresh();
+    }, [refresh]);
 
     useEffect(() => {
-        console.log('=== Admin Page approvedNFTs ===');
-        console.log('approvedNFTs:', approvedNFTs);
-    }, [approvedNFTs]);
+        const checkAdmin = async () => {
+            if (!address || walletType === 'sui') {
+                setIsAdmin(false);
+                return;
+            }
+            try {
+                setIsAdmin(await isEvmAdmin(address as Address));
+            } catch (err) {
+                console.error('Failed to check admin role:', err);
+                setIsAdmin(false);
+            }
+        };
+        checkAdmin();
+    }, [address, walletType]);
 
-    const handleNFTApproval = async (nftType: string, tier: string, isApproved: boolean) => {
+    const requireAdmin = () => {
+        if (!isConnected || walletType === 'sui') {
+            openPopup(<WalletPopup />, "Your Wallet");
+            throw new Error('Connect an Ethereum wallet on Base');
+        }
+        if (!isAdmin) {
+            throw new Error('Connected wallet is not a machine admin');
+        }
+    };
+
+    const runAdmin = async (label: string, work: () => Promise<void>) => {
         try {
-            console.log('Starting NFT approval process...');
-            console.log('Current wallet address:', address);
-            console.log('Admin address:', adminAddress);
-            console.log('NFT Type:', nftType);
-            console.log('NFT Tier:', tier);
-            console.log('Is Approved:', isApproved);
-
             setIsLoading(true);
             setError(null);
             setSuccess(null);
-
-            if (!address) {
-                console.error('Wallet not connected');
-                throw new Error('Wallet not connected');
-            }
-
-            if (address !== adminAddress) {
-                console.error('Non-admin attempt to approve NFT:', {
-                    currentAddress: address,
-                    adminAddress: adminAddress
-                });
-                throw new Error('Only the admin can approve NFTs');
-            }
-
-            if (!nftType || !tier) {
-                console.error('Missing required fields:', {
-                    nftType: nftType,
-                    nftTier: tier
-                });
-                throw new Error('NFT type and tier must be provided');
-            }
-
-            const tierBytes = new TextEncoder().encode(tier);
-            console.log('Tier bytes:', Array.from(tierBytes));
-
-            let fullType = nftType;
-            console.log('Full NFT type path:', fullType);
-
-            const tx = new Transaction();
-            tx.setSender(address);
-            console.log('Transaction created with sender:', address);
-            console.log('Creating move call with arguments:', {
-                adminCapId: SUI_ADMIN_CAP_ID,
-                tierBytes: Array.from(tierBytes),
-                machineId: SUI_MACHINE_ID
-            });
-
-            tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::approve_nft`,
-                typeArguments: [fullType],
-                arguments: [
-                    tx.object(SUI_ADMIN_CAP_ID),
-                    tx.pure.vector("u8", Array.from(tierBytes)),
-                    tx.pure.bool(isApproved),
-                    tx.object(SUI_MACHINE_ID),
-                ],
-            });
-
-            console.log('Building transaction...');
-            const builtTx = await tx.build({ client: suiClient });
-            console.log('Transaction built successfully');
-
-            console.log('Executing transaction...');
-            await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::approve_nft',
-                args: [],
-                options: {
-                    transaction: tx
-                }
-            });
-            console.log('Transaction executed successfully');
-
-            toast.success(`NFT type ${isApproved ? 'approved' : 'unapproved'} successfully`);
-            if (isApproved) {
-                setNewNFTType("");
-            }
-
-            // Refresh both machine stats and approved NFTs list
-            console.log('Refreshing data...');
-            await Promise.all([
-                fetchMachineStats(),
-                fetchApprovedNFTs()
-            ]);
-            console.log('Data refreshed successfully');
+            requireAdmin();
+            await work();
+            setSuccess(label);
+            toast.success(label);
+            await Promise.all([refresh(), fetchPrizePool()]);
         } catch (err) {
-            console.error(`Failed to ${isApproved ? 'approve' : 'unapprove'} NFT:`, err);
-            const errorMessage = err instanceof Error ? err.message : `Failed to ${isApproved ? 'approve' : 'unapprove'} NFT`;
-            setError(errorMessage);
-            toast.error(errorMessage);
+            const message = err instanceof Error ? err.message : label;
+            setError(message);
+            toast.error(message);
         } finally {
             setIsLoading(false);
-            console.log('NFT approval process completed');
         }
+    };
+
+    const handleNFTApproval = async (nftType: string, tier: PrizeType, isApproved: boolean) => {
+        await runAdmin(isApproved ? 'NFT collection approved' : 'NFT collection unapproved', async () => {
+            if (!isAddress(nftType)) {
+                throw new Error('Enter an ERC721 or ERC1155 contract address');
+            }
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'approveNFT',
+                args: [BigInt(EVM_RARITY_ID[tier]), nftType as Address, isApproved],
+            });
+            if (isApproved) setNewNFTType("");
+        });
     };
 
     const handleWithdraw = async () => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            setSuccess(null);
-
-            if (!address) {
-                throw new Error('Wallet not connected');
+        await runAdmin(`Withdrew ${formatEth(machineStats.treasuryBalance)}`, async () => {
+            if (machineStats.treasuryBalance === 0n) {
+                throw new Error('No ETH in the machine');
             }
-
-            if (address !== adminAddress) {
-                throw new Error('Only the admin can withdraw funds');
-            }
-
-            const tx = new Transaction();
-            tx.setSender(address);
-
-            const moveCall = tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::withdraw`,
-                arguments: [
-                    tx.object(SUI_ADMIN_CAP_ID),
-                    tx.object(SUI_MACHINE_ID),
-                    tx.pure.u64(machineStats.treasuryBalance.toString()),
-                ],
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'withdraw',
+                args: [zeroAddress, machineStats.treasuryBalance, address as Address],
             });
+        });
+    };
 
-            // Transfer the withdrawn SUI to the sender
-            tx.transferObjects([moveCall], tx.pure.address(address));
-
-            console.log('Calling contract with:', {
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::withdraw',
-                args: [SUI_ADMIN_CAP_ID, SUI_MACHINE_ID, machineStats.treasuryBalance.toString()],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
+    const handleRedeemPrize = async () => {
+        await runAdmin(`Redeemed last ${redeemRarity} prize`, async () => {
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'redeemPrize',
+                args: [BigInt(EVM_RARITY_ID[redeemRarity]), address as Address],
             });
-
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::withdraw',
-                args: [SUI_ADMIN_CAP_ID, SUI_MACHINE_ID, machineStats.treasuryBalance.toString()],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            console.log('Raw transaction result:', result);
-
-            if (result?.digest) {
-                console.log('Transaction submitted successfully with digest:', result.digest);
-                setSuccess(`Successfully withdrew ${treasuryBalanceDisplay.toFixed(5)} SUI`);
-                toast.success(`Successfully withdrew ${treasuryBalanceDisplay.toFixed(5)} SUI`);
-
-                // Wait for transaction to be confirmed
-                await suiClient.waitForTransaction({ digest: result.digest });
-
-                // Refresh machine stats
-                await fetchMachineStats();
-            } else {
-                throw new Error('Transaction failed - no digest returned');
-            }
-        } catch (err) {
-            console.error('Withdraw error:', err);
-            console.error('Error details:', {
-                name: err instanceof Error ? err.name : 'Unknown',
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-            });
-            const errorMessage = err instanceof Error ? err.message : 'Failed to withdraw funds';
-            setError(errorMessage);
-            toast.error(errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
+        });
     };
 
     const handleUpdatePrices = async () => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            setSuccess(null);
+        await runAdmin('Prices updated', async () => {
+            const updates: Array<[PrizeType, number]> = [
+                ['common', prices.common],
+                ['rare', prices.rare],
+                ['epic', prices.epic],
+            ];
+            for (const [tier, value] of updates) {
+                if (!(value > 0)) throw new Error(`${tier} price must be greater than 0`);
+                await callContract({
+                    chain: 'eth',
+                    contractAddress: EVM_MACHINE_ADDRESS,
+                    method: 'setRarityPrice',
+                    args: [BigInt(EVM_RARITY_ID[tier]), parseEther(value.toString())],
+                });
+            }
+        });
+    };
 
-            const commonMist = Math.round(prices.common * 1_000_000_000);
-            const rareMist = Math.round(prices.rare * 1_000_000_000);
-            const epicMist = Math.round(prices.epic * 1_000_000_000);
-
+    const handleToggleRarity = async (rarity: EvmRarity) => {
+        await runAdmin(`${rarity.name} ${rarity.enabled ? 'disabled' : 'enabled'}`, async () => {
             await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::update_prices',
-                args: [
-                    SUI_ADMIN_CAP_ID,
-                    SUI_MACHINE_ID,
-                    BigInt(commonMist),
-                    BigInt(rareMist),
-                    BigInt(epicMist)
-                ],
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'setRarityEnabled',
+                args: [BigInt(rarity.id), !rarity.enabled],
             });
-
-            toast.success('Prices updated successfully');
-            await Promise.all([
-                fetchPrices(),
-                fetchApprovedNFTs()
-            ]);
-        } catch (err) {
-            console.error('Failed to update prices:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to update prices';
-            setError(errorMessage);
-            toast.error(errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
+        });
     };
 
-    const handleMintFreeNFT = async (nft: { name: string; imageUrl: string; type: 'bear' | 'cat' | 'unicorn' }) => {
-        try {
-            setIsLoading(true);
-            setError(null);
-            setSuccess(null);
-
-            await freeMintNFT(nft.type);
-            toast.success(`${nft.name} minted successfully`);
-        } catch (err) {
-            console.error('Failed to mint free NFT:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to mint free NFT';
-            setError(errorMessage);
-            toast.error(errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
+    const handleFundVrf = async () => {
+        await runAdmin(`Funded VRF with ${vrfFund} ETH`, async () => {
+            const value = parseEther(vrfFund);
+            if (value <= 0n) throw new Error('Enter an ETH amount');
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'fundVrf',
+                args: [],
+                options: { value },
+            });
+        });
     };
 
-    // Update the treasury balance display
-    const treasuryBalanceDisplay = Number(machineStats.treasuryBalance) / 1_000_000_000;
+    const handleChangeAdmin = async () => {
+        await runAdmin('Admin role transferred', async () => {
+            if (!isAddress(newAdmin)) throw new Error('Enter a valid address');
+            if (!window.confirm(`Transfer ADMIN_ROLE to ${newAdmin}? This wallet will lose admin.`)) {
+                throw new Error('Transfer cancelled');
+            }
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'changeAdmin',
+                args: [newAdmin as Address],
+            });
+            setNewAdmin("");
+        });
+    };
 
-    const renderApprovedNFTs = () => {
-        console.log('=== Rendering Approved NFTs ===');
-        console.log('Current approvedNFTs:', approvedNFTs);
+    const writesEnabled = Boolean(isConnected && walletType !== 'sui' && isAdmin && !isLoading);
+    const explorer = (path: string) => `${BASE_EXPLORER_URL}${path}`;
 
-        return (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Common Tier</h3>
+    const renderApprovedNFTs = () => (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(['common', 'rare', 'epic'] as PrizeType[]).map((tier) => (
+                <div key={tier} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+                        {tier.charAt(0).toUpperCase() + tier.slice(1)} Tier
+                    </h3>
                     <div className="space-y-4">
-                        {approvedNFTs.filter(nft => nft.tier === 'common').length > 0 ? (
-                            approvedNFTs.filter(nft => nft.tier === 'common').map((nft, index) => (
-                                <div key={index} className="flex items-start gap-3">
-                                    {nft.imageUrl && (
-                                        <img
-                                            src={nft.imageUrl}
-                                            alt={nft.name}
-                                            className="w-12 h-12 object-contain rounded-lg"
-                                        />
-                                    )}
+                        {approvedNfts.filter((nft) => nft.tier === tier).length > 0 ? (
+                            approvedNfts.filter((nft) => nft.tier === tier).map((nft) => (
+                                <div key={nft.address} className="flex items-start gap-3">
+                                    <img
+                                        src={getImageUrl(`/${tier}.gif`)}
+                                        alt={tier}
+                                        className="w-12 h-12 object-contain rounded-lg"
+                                    />
                                     <div>
                                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {nft.name}
+                                            {nft.address.slice(0, 6)}…{nft.address.slice(-4)}
                                         </div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                            {nft.type.split('::').pop()}
-                                        </div>
-                                        {nft.description && (
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                {nft.description}
-                                            </div>
-                                        )}
+                                        <a
+                                            href={explorer(`/address/${nft.address}`)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-[#b480e4] dark:text-[#c99df0] break-all hover:underline"
+                                        >
+                                            {nft.address}
+                                        </a>
                                     </div>
                                 </div>
                             ))
@@ -477,83 +299,15 @@ export default function Admin() {
                         )}
                     </div>
                 </div>
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Rare Tier</h3>
-                    <div className="space-y-4">
-                        {approvedNFTs.filter(nft => nft.tier === 'rare').length > 0 ? (
-                            approvedNFTs.filter(nft => nft.tier === 'rare').map((nft, index) => (
-                                <div key={index} className="flex items-start gap-3">
-                                    {nft.imageUrl && (
-                                        <img
-                                            src={nft.imageUrl}
-                                            alt={nft.name}
-                                            className="w-12 h-12 object-contain rounded-lg"
-                                        />
-                                    )}
-                                    <div>
-                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {nft.name}
-                                        </div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                            {nft.type.split('::').pop()}
-                                        </div>
-                                        {nft.description && (
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                {nft.description}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-sm text-gray-500 dark:text-gray-400">none</div>
-                        )}
-                    </div>
-                </div>
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Epic Tier</h3>
-                    <div className="space-y-4">
-                        {approvedNFTs.filter(nft => nft.tier === 'epic').length > 0 ? (
-                            approvedNFTs.filter(nft => nft.tier === 'epic').map((nft, index) => (
-                                <div key={index} className="flex items-start gap-3">
-                                    {nft.imageUrl && (
-                                        <img
-                                            src={nft.imageUrl}
-                                            alt={nft.name}
-                                            className="w-12 h-12 object-contain rounded-lg"
-                                        />
-                                    )}
-                                    <div>
-                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {nft.name}
-                                        </div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                                            {nft.type.split('::').pop()}
-                                        </div>
-                                        {nft.description && (
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                                {nft.description}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-sm text-gray-500 dark:text-gray-400">none</div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
-    };
+            ))}
+        </div>
+    );
 
     return (
         <main className="min-h-screen flex flex-col items-center bg-pattern">
             <div className="w-full max-w-6xl px-4 py-6">
-                {/* Add Toaster component */}
                 <Toaster position="top-right" richColors />
 
-                {/* Header with Theme Toggle */}
                 <div className="flex flex-col items-center mb-8 relative">
                     <motion.div
                         variants={item}
@@ -571,260 +325,189 @@ export default function Admin() {
                     >
                         Admin Dashboard
                     </motion.h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Base mainnet</p>
+                    <Navigation />
                 </div>
 
-                {/* Main Content */}
-                {!address ? (
-                    <WalletConnectionPrompt message="Connect your wallet to access the admin dashboard" />
-                ) : (
-                    <motion.div
-                        variants={container}
-                        initial="hidden"
-                        animate="show"
-                        className="space-y-6"
-                    >
-                        {/* Machine Stats */}
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Machine Statistics</h2>
-                                <div className="flex flex-wrap gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <Coins className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {machineStats.totalPlays} Plays
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Wallet className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                            {treasuryBalanceDisplay.toFixed(5)} SUI
-                                        </span>
-                                    </div>
+                <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
+                    {walletType === 'sui' && (
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+                            This admin dashboard controls the Base machine. Disconnect Sui and connect Ethereum to make changes.
+                        </div>
+                    )}
+                    {isConnected && walletType !== 'sui' && !isAdmin && (
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+                            Connected wallet is not a machine admin. Stats still load; writes stay disabled.
+                        </div>
+                    )}
+                    {!isConnected && (
+                        <div className="p-4 bg-[#b480e4]/10 dark:bg-[#b480e4]/20 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <p className="text-sm text-gray-700 dark:text-gray-300">
+                                Machine data is loaded from Base. Connect Ethereum to approve collections, set prices, or withdraw.
+                            </p>
+                            <button
+                                onClick={() => openPopup(<WalletPopup />, "Your Wallet")}
+                                className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg text-sm"
+                            >
+                                Connect Ethereum
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Machine Statistics</h2>
+                            <div className="flex flex-wrap gap-4">
+                                <div className="flex items-center gap-2">
+                                    <Coins className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                        {machineStats.totalPlays} Plays
+                                    </span>
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Total Plays
-                                    </h3>
-                                    <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.totalPlays}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Common Mints
-                                    </h3>
-                                    <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.commonMints}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Rare Mints
-                                    </h3>
-                                    <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.rareMints}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        Epic Mints
-                                    </h3>
-                                    <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
-                                        {machineStats.epicMints}
-                                    </p>
+                                <div className="flex items-center gap-2">
+                                    <Wallet className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
+                                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                        {formatEth(machineStats.treasuryBalance)}
+                                    </span>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Approved NFTs Overview */}
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-                            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Approved NFTs Overview</h2>
-                            {renderApprovedNFTs()}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Common / Rare / Epic mints</h3>
+                                <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">
+                                    {machineStats.commonMints} / {machineStats.rareMints} / {machineStats.epicMints}
+                                </p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Common prizes</h3>
+                                <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">{machineStats.commonPrizes}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Rare prizes</h3>
+                                <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">{machineStats.rarePrizes}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Epic prizes</h3>
+                                <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0] mt-2">{machineStats.epicPrizes}</p>
+                            </div>
                         </div>
+                    </div>
 
-                        {/* Tabs */}
-                        <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700">
-                            <button
-                                onClick={() => setActiveTab('nfts')}
-                                className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${activeTab === 'nfts'
-                                    ? 'text-[#b480e4] dark:text-[#c99df0] border-b-2 border-[#b480e4] dark:border-[#c99df0]'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                                    }`}
-                            >
-                                Approved NFTs
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('free')}
-                                className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${activeTab === 'free'
-                                    ? 'text-[#b480e4] dark:text-[#c99df0] border-b-2 border-[#b480e4] dark:border-[#c99df0]'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                                    }`}
-                            >
-                                Free NFTs
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('withdraw')}
-                                className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${activeTab === 'withdraw'
-                                    ? 'text-[#b480e4] dark:text-[#c99df0] border-b-2 border-[#b480e4] dark:border-[#c99df0]'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                                    }`}
-                            >
-                                Withdraw
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('settings')}
-                                className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${activeTab === 'settings'
-                                    ? 'text-[#b480e4] dark:text-[#c99df0] border-b-2 border-[#b480e4] dark:border-[#c99df0]'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                                    }`}
-                            >
-                                Settings
-                            </button>
-                        </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Approved NFTs Overview</h2>
+                        {renderApprovedNFTs()}
+                    </div>
 
-                        {/* Tab Content */}
-                        <div className="mt-4">
-                            {activeTab === 'nfts' && (
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
-                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Approved NFTs (Admin Only)</h2>
+                    <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700">
+                        {([
+                            ['nfts', 'Approved NFTs'],
+                            ['withdraw', 'Withdraw'],
+                            ['settings', 'Settings'],
+                        ] as const).map(([id, label]) => (
+                            <button
+                                key={id}
+                                onClick={() => setActiveTab(id)}
+                                className={`px-3 py-2 text-sm font-medium whitespace-nowrap ${activeTab === id
+                                    ? 'text-[#b480e4] dark:text-[#c99df0] border-b-2 border-[#b480e4] dark:border-[#c99df0]'
+                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                                    }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
 
-                                    {/* Instructions */}
-                                    <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                        <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">How to Approve NFTs</h3>
-                                        <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800 dark:text-blue-200">
-                                            <li>Enter the full NFT type in the format: <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded">package_id::module_name::struct_name</code></li>
-                                            <li>For example, to approve the Bear NFT, use: <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded break-all">{SUI_CONTRACT_ADDRESS}::bear::Bear</code></li>
-                                            <li>Select the appropriate tier (common, rare, or epic)</li>
-                                            <li>Click "Approve NFT Type" to add it to the approved list</li>
-                                        </ol>
+                    <div className="mt-4">
+                        {activeTab === 'nfts' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
+                                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Approved NFTs (Admin Only)</h2>
+                                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                    <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">How to Approve NFTs</h3>
+                                    <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800 dark:text-blue-200">
+                                        <li>Enter the ERC721 or ERC1155 contract address</li>
+                                        <li>Select the bag it can be donated into (common, rare, or epic)</li>
+                                        <li>Players still need to <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded">approve</code> the machine before donating</li>
+                                    </ol>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label htmlFor="nftType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                NFT contract
+                                            </label>
+                                            <input
+                                                id="nftType"
+                                                type="text"
+                                                value={newNFTType}
+                                                onChange={(e) => setNewNFTType(e.target.value)}
+                                                placeholder="0x…"
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="nftTier" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                                Tier
+                                            </label>
+                                            <select
+                                                id="nftTier"
+                                                value={newNFTTier}
+                                                onChange={(e) => setNewNFTTier(e.target.value as PrizeType)}
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                            >
+                                                <option value="common">Common</option>
+                                                <option value="rare">Rare</option>
+                                                <option value="epic">Epic</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-end">
+                                            <button
+                                                onClick={() => handleNFTApproval(newNFTType, newNFTTier, true)}
+                                                disabled={!writesEnabled || !newNFTType}
+                                                className="w-full px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isLoading ? 'Approving...' : 'Approve NFT'}
+                                            </button>
+                                        </div>
                                     </div>
-
-                                    <div className="space-y-4">
-                                        {/* Add new NFT type */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div>
-                                                <label htmlFor="nftType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                    NFT Type
-                                                </label>
-                                                <input
-                                                    id="nftType"
-                                                    type="text"
-                                                    value={newNFTType}
-                                                    onChange={(e) => setNewNFTType(e.target.value)}
-                                                    placeholder="Enter NFT type (e.g., package_id::module_name::struct_name)"
-                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label htmlFor="nftTier" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                    Tier
-                                                </label>
-                                                <select
-                                                    id="nftTier"
-                                                    value={newNFTTier}
-                                                    onChange={(e) => setNewNFTTier(e.target.value)}
-                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                                                >
-                                                    <option value="common">Common</option>
-                                                    <option value="rare">Rare</option>
-                                                    <option value="epic">Epic</option>
-                                                </select>
-                                            </div>
-                                            <div className="flex items-end">
+                                    <div className="space-y-2">
+                                        {approvedNfts.map((nft) => (
+                                            <div key={nft.address} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg gap-4">
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                        {nft.tier.charAt(0).toUpperCase() + nft.tier.slice(1)} bag
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 break-all">{nft.address}</p>
+                                                </div>
                                                 <button
-                                                    onClick={() => handleNFTApproval(newNFTType, newNFTTier, true)}
-                                                    disabled={isLoading || !newNFTType}
-                                                    className="w-full px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    onClick={() => handleNFTApproval(nft.address, nft.tier, false)}
+                                                    disabled={!writesEnabled}
+                                                    className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    {isLoading ? 'Approving...' : 'Approve NFT Type'}
+                                                    Unapprove
                                                 </button>
-                                            </div>
-                                        </div>
-
-                                        {/* List of approved NFTs */}
-                                        <div className="space-y-2">
-                                            {approvedNFTs.map((nft, index) => (
-                                                <div
-                                                    key={index}
-                                                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                                                >
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                            {nft.name}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                            Module: {nft.module}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                            Tier: {nft.tier}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400 break-all">
-                                                            Type: {nft.type}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleNFTApproval(nft.type, nft.tier, false)}
-                                                        disabled={isLoading}
-                                                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        Unapprove
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'free' && (
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
-                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Free NFTs</h2>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                                        {freeNFTs.map((nft, index) => (
-                                            <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden">
-                                                <div className="aspect-square relative">
-                                                    <img
-                                                        src={getImageUrl(nft.imageUrl)}
-                                                        alt={nft.name}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                </div>
-                                                <div className="p-4">
-                                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                                                        {nft.name}
-                                                    </h3>
-                                                    <button
-                                                        onClick={() => handleMintFreeNFT(nft)}
-                                                        disabled={isLoading}
-                                                        className="w-full px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {isLoading ? 'Minting...' : 'Mint Free NFT'}
-                                                    </button>
-                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
 
-                            {activeTab === 'withdraw' && (
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
+                        {activeTab === 'withdraw' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6 space-y-6">
+                                <div>
                                     <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Withdraw Treasury (Admin Only)</h2>
                                     <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                             <div>
-                                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Available Balance
-                                                </p>
+                                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Available Balance</p>
                                                 <p className="text-2xl font-bold text-[#b480e4] dark:text-[#c99df0]">
-                                                    {treasuryBalanceDisplay.toFixed(5)} SUI
+                                                    {formatEth(machineStats.treasuryBalance)}
                                                 </p>
                                             </div>
                                             <button
                                                 onClick={handleWithdraw}
-                                                disabled={isLoading || machineStats.treasuryBalance === BigInt(0)}
+                                                disabled={!writesEnabled || machineStats.treasuryBalance === 0n}
                                                 className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <ArrowUpRight className="w-4 h-4" />
@@ -833,231 +516,191 @@ export default function Admin() {
                                         </div>
                                     </div>
                                 </div>
-                            )}
-
-                            {activeTab === 'settings' && (
-                                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
-                                    {/* Price Settings */}
-                                    <div className="mb-6">
-                                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Machine Settings (Admin Only)</h2>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                                    Common NFT Price (SUI)
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    value={prices.common}
-                                                    onChange={(e) => {
-                                                        const value = parseFloat(e.target.value);
-                                                        if (!isNaN(value) && value >= 0) {
-                                                            setPrices(prev => ({ ...prev, common: value }));
-                                                        }
-                                                    }}
-                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                                                    min="0"
-                                                    step="0.01"
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
-                                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                                    Rare NFT Price (SUI)
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    value={prices.rare}
-                                                    onChange={(e) => {
-                                                        const value = parseFloat(e.target.value);
-                                                        if (!isNaN(value) && value >= 0) {
-                                                            setPrices(prev => ({ ...prev, rare: value }));
-                                                        }
-                                                    }}
-                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                                                    min="0"
-                                                    step="0.01"
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
-                                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                                    Epic NFT Price (SUI)
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    value={prices.epic}
-                                                    onChange={(e) => {
-                                                        const value = parseFloat(e.target.value);
-                                                        if (!isNaN(value) && value >= 0) {
-                                                            setPrices(prev => ({ ...prev, epic: value }));
-                                                        }
-                                                    }}
-                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-                                                    min="0"
-                                                    step="0.01"
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="mt-4">
-                                            <button
-                                                onClick={handleUpdatePrices}
-                                                disabled={isLoading}
-                                                className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                <div>
+                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Redeem last prize</h2>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex flex-col sm:flex-row gap-4 items-end">
+                                        <div className="flex-1 w-full">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bag</label>
+                                            <select
+                                                value={redeemRarity}
+                                                onChange={(e) => setRedeemRarity(e.target.value as PrizeType)}
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
                                             >
-                                                {isLoading ? 'Updating...' : 'Update Prices'}
-                                            </button>
+                                                <option value="common">Common ({machineStats.commonPrizes})</option>
+                                                <option value="rare">Rare ({machineStats.rarePrizes})</option>
+                                                <option value="epic">Epic ({machineStats.epicPrizes})</option>
+                                            </select>
                                         </div>
+                                        <button
+                                            onClick={handleRedeemPrize}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Redeem to my wallet
+                                        </button>
                                     </div>
+                                </div>
+                            </div>
+                        )}
 
-                                    {/* Contract Info */}
-                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Contract Info</h3>
-                                    <div className="space-y-4">
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        {activeTab === 'settings' && (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
+                                <div className="mb-6">
+                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Machine Settings (Admin Only)</h2>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {(['common', 'rare', 'epic'] as PrizeType[]).map((tier) => (
+                                            <div key={tier} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                    {tier.charAt(0).toUpperCase() + tier.slice(1)} price (ETH)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    value={prices[tier]}
+                                                    onChange={(e) => {
+                                                        const value = parseFloat(e.target.value);
+                                                        if (!isNaN(value) && value >= 0) {
+                                                            setPrices((prev) => ({ ...prev, [tier]: value }));
+                                                        }
+                                                    }}
+                                                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                                    min="0"
+                                                    step="0.001"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-4">
+                                        <button
+                                            onClick={handleUpdatePrices}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isLoading ? 'Updating...' : 'Update Prices'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Rarity status</h3>
+                                    <div className="space-y-2">
+                                        {(rarities.length ? rarities : evmRarities).map((rarity) => (
+                                            <div key={rarity.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{rarity.name}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatEth(rarity.price)}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleToggleRarity(rarity)}
+                                                    disabled={!writesEnabled}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm text-white disabled:opacity-50 ${rarity.enabled ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
+                                                >
+                                                    {rarity.enabled ? 'Disable' : 'Enable'}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Fund VRF</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex flex-col sm:flex-row gap-4 items-end">
+                                        <div className="flex-1 w-full">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ETH amount</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.001"
+                                                value={vrfFund}
+                                                onChange={(e) => setVrfFund(e.target.value)}
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleFundVrf}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Fund subscription
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Transfer admin</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex flex-col sm:flex-row gap-4 items-end">
+                                        <div className="flex-1 w-full">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New admin address</label>
+                                            <input
+                                                type="text"
+                                                value={newAdmin}
+                                                onChange={(e) => setNewAdmin(e.target.value)}
+                                                placeholder="0x…"
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleChangeAdmin}
+                                            disabled={!writesEnabled || !newAdmin}
+                                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Transfer ADMIN_ROLE
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Contract Info</h3>
+                                <div className="space-y-4">
+                                    {[
+                                        ['Connected wallet', address || 'Not connected'],
+                                        ['Machine', EVM_MACHINE_ADDRESS],
+                                        ['Common capsule', EVM_NFT_ADDRESSES.COMMON],
+                                        ['Rare capsule', EVM_NFT_ADDRESSES.RARE],
+                                        ['Epic capsule', EVM_NFT_ADDRESSES.EPIC],
+                                    ].map(([label, value]) => (
+                                        <div key={label} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                             <div className="flex items-center gap-2">
                                                 <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Admin Address
-                                                </h3>
+                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</h3>
                                             </div>
-                                            {adminAddress ? (
+                                            {value.startsWith('0x') ? (
                                                 <a
-                                                    href={`${EXPLORER_URL}/address/${adminAddress}`}
+                                                    href={explorer(`/address/${value}`)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
                                                 >
-                                                    {adminAddress}
+                                                    {value}
                                                 </a>
                                             ) : (
-                                                <span className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                                    Loading admin address...
-                                                </span>
+                                                <span className="text-sm text-gray-500 dark:text-gray-400 mt-1 block">{value}</span>
                                             )}
                                         </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Contract Address
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${SUI_CONTRACT_ADDRESS}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {SUI_CONTRACT_ADDRESS}
-                                            </a>
-                                        </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Bear Module
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${NFT_MODULES.BEAR}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {NFT_MODULES.BEAR}
-                                            </a>
-                                        </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Cat Module
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${NFT_MODULES.CAT}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {NFT_MODULES.CAT}
-                                            </a>
-                                        </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Unicorn Module
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${NFT_MODULES.UNICORN}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {NFT_MODULES.UNICORN}
-                                            </a>
-                                        </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Admin Cap ID
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${SUI_ADMIN_CAP_ID}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {SUI_ADMIN_CAP_ID}
-                                            </a>
-                                        </div>
-                                        <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                                            <div className="flex items-center gap-2">
-                                                <Settings className="w-5 h-5 text-[#b480e4] dark:text-[#c99df0]" />
-                                                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    Machine ID
-                                                </h3>
-                                            </div>
-                                            <a
-                                                href={`${EXPLORER_URL}/object/${SUI_MACHINE_ID}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[#b480e4] dark:text-[#c99df0] hover:underline mt-1 break-all block"
-                                            >
-                                                {SUI_MACHINE_ID}
-                                            </a>
-                                        </div>
-                                    </div>
+                                    ))}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
+                    </div>
 
-                        {/* Error and Success Messages */}
-                        {error && (
-                            <div className="p-4 bg-red-100 dark:bg-red-900/20 rounded-lg">
-                                <div className="flex items-center gap-2">
-                                    <AlertCircle className="h-5 w-5 text-red-500" />
-                                    <h3 className="text-lg font-medium text-red-900 dark:text-red-100">Error</h3>
-                                </div>
-                                <p className="mt-2 text-red-700 dark:text-red-300">{error}</p>
+                    {error && (
+                        <div className="p-4 bg-red-100 dark:bg-red-900/20 rounded-lg">
+                            <div className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-red-500" />
+                                <h3 className="text-lg font-medium text-red-900 dark:text-red-100">Error</h3>
                             </div>
-                        )}
-                        {success && (
-                            <div className="p-4 bg-green-100 dark:bg-green-900/20 rounded-lg">
-                                <div className="flex items-center gap-2">
-                                    <ArrowDownLeft className="h-5 w-5 text-green-500" />
-                                    <h3 className="text-lg font-medium text-green-900 dark:text-green-100">Success</h3>
-                                </div>
-                                <p className="mt-2 text-green-700 dark:text-green-300">{success}</p>
+                            <p className="mt-2 text-red-700 dark:text-red-300">{error}</p>
+                        </div>
+                    )}
+                    {success && (
+                        <div className="p-4 bg-green-100 dark:bg-green-900/20 rounded-lg">
+                            <div className="flex items-center gap-2">
+                                <ArrowDownLeft className="h-5 w-5 text-green-500" />
+                                <h3 className="text-lg font-medium text-green-900 dark:text-green-100">Success</h3>
                             </div>
-                        )}
-                    </motion.div>
-                )}
+                            <p className="mt-2 text-green-700 dark:text-green-300">{success}</p>
+                        </div>
+                    )}
+                </motion.div>
             </div>
         </main>
     );
-} 
+}

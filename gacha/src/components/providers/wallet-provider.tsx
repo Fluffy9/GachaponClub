@@ -5,8 +5,18 @@ import { Transaction } from '@mysten/sui/transactions';
 import type { SuiObjectResponse } from '@mysten/sui/client';
 import type { WalletType, TokenBalance, NFT } from '../../lib/wallet-context';
 import { NETWORK, NFT_MODULES, SUI_MACHINE_ID, SUI_CONTRACT_ADDRESS, getImageUrl } from '../../lib/constants';
-import { coinWithBalance } from '@mysten/sui/transactions';
-import { connectorsForWallets } from '@rainbow-me/rainbowkit';
+import { useAccount, useBalance, useDisconnect, useSwitchChain, useWalletClient } from 'wagmi';
+import { base } from 'wagmi/chains';
+import { type Address } from 'viem';
+import {
+    ERC1155_ABI,
+    MACHINE_ABI,
+    evmPublicClient,
+    fetchEvmCapsuleBalances,
+    fetchEvmPrizePool as fetchEvmPrizes,
+    fetchEvmRarities,
+    type EvmRarity,
+} from '../../lib/evm';
 
 const suiClient = new SuiClient({
     url: NETWORK === 'testnet'
@@ -71,6 +81,7 @@ export interface WalletContextType {
     fetchApprovedNFTs: () => Promise<void>;
     fetchPrizePool: () => Promise<void>;
     fetchNFTs: (address: string) => Promise<void>;
+    evmRarities: EvmRarity[];
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -103,6 +114,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const [contractCallSuccess, setContractCallSuccess] = useState(false);
     const [contractCallError, setContractCallError] = useState<string | null>(null);
     const [prizePool, setPrizePool] = useState<Prize[]>([]);
+    const [evmRarities, setEvmRarities] = useState<EvmRarity[]>([]);
 
     // Sui wallet hooks
     const suiWallet = useSuiWallet();
@@ -112,6 +124,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         select: suiSelect,
         account: suiAccount,
     } = suiWallet;
+
+    const { address: ethAddress, isConnected: ethConnected, chainId } = useAccount();
+    const { data: ethBalance } = useBalance({
+        address: ethAddress,
+        chainId: base.id,
+        query: { enabled: Boolean(ethAddress) },
+    });
+    const { disconnect: disconnectEth } = useDisconnect();
+    const { switchChainAsync } = useSwitchChain();
+    const { data: walletClient } = useWalletClient();
 
     // Fetch approved NFTs from the machine
     const fetchApprovedNFTs = async () => {
@@ -294,7 +316,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const fetchPrizePool = async () => {
+    const fetchSuiPrizePool = async () => {
         try {
             console.log('=== Starting fetchPrizePool ===');
 
@@ -344,6 +366,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         } catch (error) {
             console.error('Failed to fetch prize pool:', error);
             setPrizePool([]);
+        }
+    };
+
+    const loadEvmPublicData = async () => {
+        try {
+            const [rarities, prizes] = await Promise.all([
+                fetchEvmRarities(),
+                fetchEvmPrizes(),
+            ]);
+            setEvmRarities(rarities);
+            setPrizePool(prizes);
+        } catch (error) {
+            console.error('Failed to fetch Base machine data:', error);
+        }
+    };
+
+    const fetchPrizePool = async () => {
+        if (suiConnected) {
+            await fetchSuiPrizePool();
+        } else {
+            await loadEvmPublicData();
         }
     };
 
@@ -458,7 +501,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    // Update wallet state when connections change
+    useEffect(() => {
+        loadEvmPublicData();
+    }, []);
+
     useEffect(() => {
         if (!isInitialized) {
             setIsInitialized(true);
@@ -470,7 +516,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setAddress(suiAccount.address);
             setChain('sui');
 
-            // Fetch SUI balance
             const fetchBalance = async () => {
                 try {
                     const coins = await suiClient.getCoins({
@@ -495,73 +540,50 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 }
             };
 
-            // Fetch NFTs
-            const fetchNFTs = async (ownerAddress: string) => {
-                try {
-                    console.log('Fetching NFTs for address:', ownerAddress);
-                    const objects = await suiClient.getOwnedObjects({
-                        owner: ownerAddress,
-                        options: { showContent: true, showOwner: true }
-                    });
-
-                    console.log('Raw owned NFT objects:', objects.data);
-
-                    const nftObjects = objects.data
-                        .filter((obj: SuiObjectResponse) => {
-                            const isMoveObject = obj.data?.content?.dataType === 'moveObject';
-                            const content = obj.data?.content as { dataType: 'moveObject'; type: string } | undefined;
-                            const type = content?.type || '';
-                            // Only include NFTs from the current contract deployment, handling 0x prefix
-                            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
-                            const nftType = type.startsWith('0x') ? type.slice(2) : type;
-                            const isFromCurrentDeployment = nftType.startsWith(contractAddress);
-                            return isMoveObject && isFromCurrentDeployment;
-                        })
-                        .map((obj: SuiObjectResponse) => {
-                            const content = obj.data?.content as {
-                                dataType: 'moveObject';
-                                type: string;
-                                fields: Record<string, any>;
-                            };
-                            return {
-                                id: content?.fields?.id?.id || '',
-                                name: content?.fields?.name || 'Unknown NFT',
-                                imageUrl: content?.fields?.image_url || '',
-                                collection: content?.fields?.collection || '',
-                                type: content?.type || '',
-                                raw: JSON.stringify(obj)
-                            };
-                        });
-
-                    console.log('Filtered and owned NFTs:', nftObjects);
-                    setNfts(nftObjects);
-                } catch (error) {
-                    console.error('Failed to fetch NFTs:', error);
-                    setNfts([]);
-                }
-            };
-
-            // Fetch NFTs, approved NFTs, and prize pool
-            const fetchData = async () => {
-                await Promise.all([
-                    fetchApprovedNFTs(),
-                    fetchNFTs(suiAccount.address),
-                    fetchPrizePool()
-                ]);
-            };
-
             fetchBalance();
-            fetchData();
-        } else {
+            Promise.all([
+                fetchApprovedNFTs(),
+                fetchSuiOwnedNfts(suiAccount.address),
+                fetchSuiPrizePool()
+            ]);
+        }
+    }, [suiConnected, suiAccount, isInitialized]);
+
+    useEffect(() => {
+        if (ethConnected && ethAddress && !suiConnected) {
+            setWalletType('eth');
+            setAddress(ethAddress);
+            setChain('base');
+        }
+    }, [ethConnected, ethAddress, suiConnected]);
+
+    useEffect(() => {
+        if (ethConnected && ethBalance && !suiConnected) {
+            setBalances([{
+                symbol: 'ETH',
+                amount: ethBalance.value.toString(),
+                decimals: 18
+            }]);
+        }
+    }, [ethConnected, ethBalance, suiConnected]);
+
+    useEffect(() => {
+        if (ethConnected && ethAddress && !suiConnected) {
+            fetchEvmOwnedNfts(ethAddress);
+        }
+    }, [ethConnected, ethAddress, suiConnected]);
+
+    useEffect(() => {
+        if (!suiConnected && !ethConnected) {
             setWalletType(null);
             setAddress(null);
-            setChain(null);
+            setChain('base');
             setBalances([]);
             setNfts([]);
             setApprovedNFTs([]);
-            setPrizePool([]);
+            loadEvmPublicData();
         }
-    }, [suiConnected, suiAccount, isInitialized, suiClient]);
+    }, [suiConnected, ethConnected]);
 
     const connect = async (type: WalletType) => {
         if (type === 'sui' && suiSelect) {
@@ -577,13 +599,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (walletType === 'sui' && suiWallet) {
             suiWallet.disconnect();
         }
+        if (ethConnected) {
+            disconnectEth();
+        }
         setWalletType(null);
         setAddress(null);
-        setChain(null);
+        setChain('base');
         setBalances([]);
         setNfts([]);
         setApprovedNFTs([]);
-        setPrizePool([]);
+        loadEvmPublicData();
     };
     const callContract = async (params: {
         chain: 'sui' | 'eth';
@@ -597,8 +622,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             setContractCallError(null);
             setContractCallSuccess(false);
 
+            if (params.chain === 'eth') {
+                if (!walletClient || !ethAddress) {
+                    throw new Error('Ethereum wallet not connected');
+                }
+                if (chainId !== base.id) {
+                    await switchChainAsync({ chainId: base.id });
+                }
+
+                const abi = params.method === 'setApprovalForAll' ? ERC1155_ABI : MACHINE_ABI;
+                const hash = await walletClient.writeContract({
+                    address: params.contractAddress as Address,
+                    abi,
+                    functionName: params.method,
+                    args: params.args,
+                    account: ethAddress,
+                    chain: base,
+                    ...(params.options?.value !== undefined
+                        ? { value: params.options.value as bigint }
+                        : {}),
+                } as Parameters<typeof walletClient.writeContract>[0]);
+                const receipt = await evmPublicClient.waitForTransactionReceipt({ hash });
+                setContractCallSuccess(true);
+                return receipt;
+            }
+
             if (params.chain !== 'sui') {
-                throw new Error('Ethereum functionality is currently disabled');
+                throw new Error('Unsupported chain');
             }
 
             if (!suiWallet || !suiWallet.account?.address) {
@@ -715,11 +765,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const fetchNFTs = async (address: string) => {
+    async function fetchSuiOwnedNfts(ownerAddress: string) {
         try {
-            console.log('Fetching NFTs for address:', address);
+            console.log('Fetching NFTs for address:', ownerAddress);
             const objects = await suiClient.getOwnedObjects({
-                owner: address,
+                owner: ownerAddress,
                 options: { showContent: true }
             });
 
@@ -730,7 +780,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     const isMoveObject = obj.data?.content?.dataType === 'moveObject';
                     const content = obj.data?.content as { dataType: 'moveObject'; type: string } | undefined;
                     const type = content?.type || '';
-                    // Only include NFTs from the current contract deployment, handling 0x prefix
                     const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
                     const nftType = type.startsWith('0x') ? type.slice(2) : type;
                     const isFromCurrentDeployment = nftType.startsWith(contractAddress);
@@ -760,10 +809,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    async function fetchEvmOwnedNfts(ownerAddress: string) {
+        try {
+            const nftObjects = await fetchEvmCapsuleBalances(ownerAddress as Address);
+            setNfts(nftObjects);
+        } catch (error) {
+            console.error('Failed to fetch Base capsules:', error);
+            setNfts([]);
+        }
+    };
+
+    const fetchNFTs = async (ownerAddress: string) => {
+        if (ethConnected && !suiConnected) {
+            await fetchEvmOwnedNfts(ownerAddress);
+            return;
+        }
+        await fetchSuiOwnedNfts(ownerAddress);
+    };
+
     const value = {
         walletType,
         address,
-        isConnected: Boolean(suiConnected),
+        isConnected: Boolean(suiConnected || ethConnected),
         chain,
         balances,
         nfts,
@@ -789,7 +856,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
         fetchApprovedNFTs,
         fetchPrizePool,
-        fetchNFTs
+        fetchNFTs,
+        evmRarities
     };
 
     return (
