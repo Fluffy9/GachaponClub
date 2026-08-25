@@ -56,6 +56,7 @@ export const BASE_RPC_URL =
     import.meta.env?.VITE_BASE_RPC_URL ??
     'https://base-mainnet.g.alchemy.com/v2/FM6pjKevbBo4z7kCribWeWXwDJxGTV0_';
 export const BASE_EXPLORER_URL = 'https://basescan.org';
+export const WALLETCONNECT_PROJECT_ID = 'e151333bb1826587cfaf15c54011854a';
 export const EVM_DEPLOY_FROM_BLOCK = 50441000n;
 
 /** @deprecated Use EVM_MACHINE_ADDRESS */
