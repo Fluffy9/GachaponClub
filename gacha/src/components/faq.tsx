@@ -25,7 +25,7 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "Can I donate my NFT?",
-    answer: "Admin-approved collections can be donated into one or more bags. When you donate, you pick the bag. You receive one capsule of that same tier.",
+    answer: "Admin-approved collections can be donated into one or more bags. When you donate, you pick the bag. You receive one capsule of that same tier. The operator can pull prizes from a bag at any time — this is a hot-wallet machine, not a timelocked vault.",
   },
   {
     question: "How do I open a capsule?",

@@ -250,7 +250,7 @@ export default function Admin() {
                 throw new Error('Connect an admin wallet to receive leftover VRF funds');
             }
             if (!window.confirm(
-                `Cancel the machine-owned VRF subscription and send leftover LINK/ETH to ${address}? Play will fail until a new subscription is configured. This cannot recover funds on the previous live machine.`
+                `Cancel the machine-owned VRF subscription and send leftover LINK/ETH to ${address}? Play will fail until you create a new subscription on the same coordinator.`
             )) {
                 throw new Error('Cancel aborted');
             }
@@ -259,6 +259,17 @@ export default function Admin() {
                 contractAddress: EVM_MACHINE_ADDRESS,
                 method: 'cancelVrfSubscription',
                 args: [address as Address],
+            });
+        });
+    };
+
+    const handleCreateVrf = async () => {
+        await runAdmin('Created a new VRF subscription', async () => {
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'createVrfSubscription',
+                args: [],
             });
         });
     };
@@ -686,9 +697,16 @@ export default function Admin() {
                                         >
                                             Cancel subscription
                                         </button>
+                                        <button
+                                            onClick={handleCreateVrf}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Create subscription
+                                        </button>
                                     </div>
                                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                        Cancel sends leftover VRF ETH/LINK to the connected wallet. Play stays off until a new subscription is set. Pending draws must finish or be rescued first.
+                                        Cancel returns leftover VRF ETH/LINK to the connected wallet. Create opens a new sub on the same Chainlink coordinator. Pending draws must finish or be rescued first.
                                     </p>
                                 </div>
 

@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./vrf/IVRFCoordinatorV2Plus.sol";
 import "./vrf/IVRFSubscriptionV2Plus.sol";
@@ -69,23 +68,6 @@ contract GachaMachine is
         address from
     );
     event TokensWithdrawn(address indexed token, uint256 amount, address to);
-    event NFTWithdrawalScheduled(
-        bytes32 indexed withdrawalId,
-        address indexed tokenContract,
-        uint256 tokenId,
-        uint256 amount,
-        bool isERC721,
-        address to,
-        uint256 withdrawalTime
-    );
-    event NFTWithdrawn(
-        bytes32 indexed withdrawalId,
-        address indexed tokenContract,
-        uint256 tokenId,
-        uint256 amount,
-        bool isERC721,
-        address to
-    );
     event AdminTransferStarted(address indexed from, address indexed to);
     event AdminChanged(address indexed oldAdmin, address indexed newAdmin);
     event CapsulePurchased(
@@ -135,13 +117,15 @@ contract GachaMachine is
         bool nativePayment
     );
     event VRFSubscriptionCanceled(uint256 indexed subscriptionId, address indexed to);
+    event VRFSubscriptionCreated(uint256 indexed subscriptionId);
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /// @dev Capsule ERC1155 id on every per-rarity GachaNFT.
     uint256 public constant CAPSULE_ID = 0;
-    uint256 public constant WITHDRAWAL_DELAY = 1 weeks;
     uint256 public constant DEFAULT_RESCUE_DELAY = 1 days;
+    uint8 public constant TOKEN_ERC721 = 1;
+    uint8 public constant TOKEN_ERC1155 = 2;
 
     error OnlyCoordinatorCanFulfill(address have, address want);
 
@@ -157,15 +141,6 @@ contract GachaMachine is
         uint256 tokenId;
         uint256 amount;
         bool isERC721;
-    }
-
-    struct NFTWithdrawal {
-        address tokenContract;
-        uint256 tokenId;
-        uint256 amount;
-        bool isERC721;
-        address to;
-        uint256 withdrawalTime;
     }
 
     struct VRFConfig {
@@ -198,16 +173,16 @@ contract GachaMachine is
 
     /// @dev Collection approved independently for each rarity bag.
     mapping(address => mapping(uint256 => bool)) public approvedForRarity;
+    /// @dev 0 unset, 1 ERC721, 2 ERC1155. Frozen on first `approveNFT`.
+    mapping(address => uint8) public tokenStandard;
 
-    mapping(bytes32 => NFTWithdrawal) public pendingNFTWithdrawals;
-    uint256 public withdrawalNonce;
-
+    address public immutable vrfCoordinator;
     VRFConfig public vrfConfig;
     mapping(uint256 => Draw) public draws;
     mapping(uint256 => uint256) public pendingDraws;
     mapping(address => PrizeClaim[]) private _claims;
 
-    /// @dev Drawn or scheduled-out tokens still sitting on this contract.
+    /// @dev Drawn tokens still sitting on this contract until claim.
     mapping(address => mapping(uint256 => uint256)) public reserved1155;
     mapping(address => mapping(uint256 => bool)) public reserved721;
 
@@ -215,13 +190,22 @@ contract GachaMachine is
     address public pendingAdmin;
     address public adminTransferFrom;
 
-    bool private _inDonation;
+    struct PendingDonation {
+        address token;
+        uint256 id;
+        uint256 amount;
+        address from;
+    }
+
+    PendingDonation private _pendingDonation;
 
     constructor(VRFConfig memory config) {
+        require(config.coordinator != address(0), "VRF not configured");
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
         rescueDelay = DEFAULT_RESCUE_DELAY;
-        if (config.subscriptionId == 0 && config.coordinator != address(0)) {
+        vrfCoordinator = config.coordinator;
+        if (config.subscriptionId == 0) {
             config.subscriptionId = IVRFSubscriptionV2Plus(config.coordinator)
                 .createSubscription();
             IVRFSubscriptionV2Plus(config.coordinator).addConsumer(
@@ -235,14 +219,15 @@ contract GachaMachine is
     function fundVrf() external payable {
         require(msg.value > 0, "No value");
         require(vrfConfig.subscriptionId != 0, "No subscription");
-        IVRFSubscriptionV2Plus(vrfConfig.coordinator).fundSubscriptionWithNative{
+        IVRFSubscriptionV2Plus(vrfCoordinator).fundSubscriptionWithNative{
             value: msg.value
         }(vrfConfig.subscriptionId);
     }
 
     /**
      * @dev Cancel the machine-owned VRF sub and send leftover LINK/native to `to`.
-     *      Play will fail until `setVRFConfig` points at a live subscription.
+     *      Play will fail until `createVrfSubscription` opens a new sub on the
+     *      same coordinator.
      */
     function cancelVrfSubscription(address to) external onlyRole(ADMIN_ROLE) nonReentrant {
         require(to != address(0), "Invalid recipient");
@@ -251,8 +236,17 @@ contract GachaMachine is
         require(!_hasPendingDraws(), "Pending draws");
 
         vrfConfig.subscriptionId = 0;
-        IVRFSubscriptionV2Plus(vrfConfig.coordinator).cancelSubscription(subId, to);
+        IVRFSubscriptionV2Plus(vrfCoordinator).cancelSubscription(subId, to);
         emit VRFSubscriptionCanceled(subId, to);
+    }
+
+    /// @dev Open a new machine-owned sub on the frozen Chainlink coordinator.
+    function createVrfSubscription() external onlyRole(ADMIN_ROLE) {
+        require(vrfConfig.subscriptionId == 0, "Subscription exists");
+        uint256 subId = IVRFSubscriptionV2Plus(vrfCoordinator).createSubscription();
+        IVRFSubscriptionV2Plus(vrfCoordinator).addConsumer(subId, address(this));
+        vrfConfig.subscriptionId = subId;
+        emit VRFSubscriptionCreated(subId);
     }
 
     function supportsInterface(
@@ -268,34 +262,44 @@ contract GachaMachine is
     }
 
     function onERC1155Received(
-        address operator,
+        address,
         address from,
         uint256 id,
         uint256 value,
         bytes memory data
     ) public override returns (bytes4) {
-        require(_inDonation, "Direct transfer disabled");
-        return super.onERC1155Received(operator, from, id, value, data);
+        require(
+            msg.sender == _pendingDonation.token &&
+                from == _pendingDonation.from &&
+                id == _pendingDonation.id &&
+                value == _pendingDonation.amount,
+            "Direct transfer disabled"
+        );
+        return super.onERC1155Received(msg.sender, from, id, value, data);
     }
 
     function onERC1155BatchReceived(
-        address operator,
-        address from,
-        uint256[] memory ids,
-        uint256[] memory values,
-        bytes memory data
+        address,
+        address,
+        uint256[] memory,
+        uint256[] memory,
+        bytes memory
     ) public override returns (bytes4) {
-        require(_inDonation, "Direct transfer disabled");
-        return super.onERC1155BatchReceived(operator, from, ids, values, data);
+        revert("Direct transfer disabled");
     }
 
     function onERC721Received(
         address,
-        address,
-        uint256,
+        address from,
+        uint256 tokenId,
         bytes memory
     ) public view override returns (bytes4) {
-        require(_inDonation, "Direct transfer disabled");
+        require(
+            msg.sender == _pendingDonation.token &&
+                from == _pendingDonation.from &&
+                tokenId == _pendingDonation.id,
+            "Direct transfer disabled"
+        );
         return this.onERC721Received.selector;
     }
 
@@ -364,13 +368,14 @@ contract GachaMachine is
     function setVRFConfig(
         VRFConfig calldata config
     ) external onlyRole(ADMIN_ROLE) {
+        require(!_hasPendingDraws(), "Pending draws");
         _setVRFConfig(config);
     }
 
     function play(
         uint256 rarityId
     ) external nonReentrant whenNotPaused returns (uint256 requestId) {
-        require(vrfConfig.coordinator != address(0), "VRF not configured");
+        require(vrfCoordinator != address(0), "VRF not configured");
         require(vrfConfig.subscriptionId != 0, "No subscription");
         require(rarityId < rarities.length, "Invalid rarity ID");
         RarityInfo storage rarity = rarities[rarityId];
@@ -384,7 +389,7 @@ contract GachaMachine is
         pendingDraws[rarityId]++;
         IGachaNFT(rarity.tokenContract).burn(msg.sender, CAPSULE_ID, 1);
 
-        requestId = IVRFCoordinatorV2Plus(vrfConfig.coordinator)
+        requestId = IVRFCoordinatorV2Plus(vrfCoordinator)
             .requestRandomWords(
                 VRFV2PlusClient.RandomWordsRequest({
                     keyHash: vrfConfig.keyHash,
@@ -414,10 +419,10 @@ contract GachaMachine is
         uint256 requestId,
         uint256[] calldata randomWords
     ) external {
-        if (msg.sender != vrfConfig.coordinator) {
+        if (msg.sender != vrfCoordinator) {
             revert OnlyCoordinatorCanFulfill(
                 msg.sender,
-                vrfConfig.coordinator
+                vrfCoordinator
             );
         }
         _fulfillRandomWords(requestId, randomWords);
@@ -559,16 +564,22 @@ contract GachaMachine is
                 !approvedForRarity[tokenContract][rarityId],
                 "Already approved for rarity"
             );
-            bool isERC721 = IERC721(tokenContract).supportsInterface(
-                type(IERC721).interfaceId
-            );
-            bool isERC1155 = IERC1155(tokenContract).supportsInterface(
-                type(IERC1155).interfaceId
-            );
-            require(
-                isERC721 || isERC1155,
-                "Contract must be ERC721 or ERC1155"
-            );
+            if (tokenStandard[tokenContract] == 0) {
+                bool isERC721 = IERC721(tokenContract).supportsInterface(
+                    type(IERC721).interfaceId
+                );
+                bool isERC1155 = IERC1155(tokenContract).supportsInterface(
+                    type(IERC1155).interfaceId
+                );
+                require(
+                    isERC721 || isERC1155,
+                    "Contract must be ERC721 or ERC1155"
+                );
+                // Prefer 721 when a token reports both, matching the old donate path.
+                tokenStandard[tokenContract] = isERC721
+                    ? TOKEN_ERC721
+                    : TOKEN_ERC1155;
+            }
             approvedForRarity[tokenContract][rarityId] = true;
         } else {
             require(
@@ -599,14 +610,31 @@ contract GachaMachine is
         require(rarities[rarityId].enabled, "Rarity not enabled");
         require(amount > 0, "Amount must be greater than 0");
 
-        bool isERC721 = ERC165(tokenContract).supportsInterface(
-            type(IERC721).interfaceId
-        );
+        uint8 standard = tokenStandard[tokenContract];
+        require(standard != 0, "NFT not approved for rarity");
+        bool isERC721 = standard == TOKEN_ERC721;
         if (isERC721) {
             require(amount == 1, "ERC721 amount must be 1");
+            require(
+                IERC721(tokenContract).ownerOf(tokenId) == msg.sender,
+                "Not token owner"
+            );
         }
 
-        _inDonation = true;
+        uint256 balanceBefore;
+        if (!isERC721) {
+            balanceBefore = IERC1155(tokenContract).balanceOf(
+                address(this),
+                tokenId
+            );
+        }
+
+        _pendingDonation = PendingDonation({
+            token: tokenContract,
+            id: tokenId,
+            amount: amount,
+            from: msg.sender
+        });
         if (isERC721) {
             IERC721(tokenContract).safeTransferFrom(
                 msg.sender,
@@ -622,7 +650,20 @@ contract GachaMachine is
                 ""
             );
         }
-        _inDonation = false;
+        delete _pendingDonation;
+
+        if (isERC721) {
+            require(
+                IERC721(tokenContract).ownerOf(tokenId) == address(this),
+                "Transfer failed"
+            );
+        } else {
+            require(
+                IERC1155(tokenContract).balanceOf(address(this), tokenId) ==
+                    balanceBefore + amount,
+                "Transfer failed"
+            );
+        }
 
         prizes[rarityId].push(
             PrizeInfo({
@@ -724,15 +765,16 @@ contract GachaMachine is
     }
 
     /**
-     * @dev Pull a specific bag slot after the delay. Removes it from the bag
-     *      immediately so pending draws cannot land on it, then holds the
-     *      tokens as reserved until `executeNFTWithdrawal`.
+     * @dev Instant indexed pull. `tokenContract`/`tokenId` must match the slot
+     *      so a VRF swap-and-pop cannot silently redirect the withdrawal.
      */
-    function schedulePrizeWithdrawal(
+    function withdrawPrize(
         uint256 rarityId,
         uint256 index,
+        address tokenContract,
+        uint256 tokenId,
         address to
-    ) external onlyRole(ADMIN_ROLE) returns (bytes32 withdrawalId) {
+    ) external onlyRole(ADMIN_ROLE) nonReentrant {
         require(to != address(0), "Invalid recipient");
         require(rarityId < rarities.length, "Invalid rarity ID");
         PrizeInfo[] storage bag = prizes[rarityId];
@@ -740,73 +782,28 @@ contract GachaMachine is
         require(bag.length > pendingDraws[rarityId], "Prize reserved");
 
         PrizeInfo memory prize = bag[index];
+        require(
+            prize.tokenContract == tokenContract && prize.tokenId == tokenId,
+            "Wrong prize"
+        );
+
         bag[index] = bag[bag.length - 1];
         bag.pop();
-        _reserve(prize.tokenContract, prize.tokenId, prize.amount, prize.isERC721);
-
-        withdrawalNonce++;
-        withdrawalId = keccak256(
-            abi.encode(
-                prize.tokenContract,
-                prize.tokenId,
-                prize.amount,
-                to,
-                withdrawalNonce
-            )
-        );
-        uint256 withdrawalTime = block.timestamp + WITHDRAWAL_DELAY;
-        pendingNFTWithdrawals[withdrawalId] = NFTWithdrawal({
-            tokenContract: prize.tokenContract,
-            tokenId: prize.tokenId,
-            amount: prize.amount,
-            isERC721: prize.isERC721,
-            to: to,
-            withdrawalTime: withdrawalTime
-        });
-
-        emit NFTWithdrawalScheduled(
-            withdrawalId,
+        _sendPrize(
             prize.tokenContract,
             prize.tokenId,
             prize.amount,
             prize.isERC721,
-            to,
-            withdrawalTime
-        );
-    }
-
-    function executeNFTWithdrawal(
-        bytes32 withdrawalId
-    ) external onlyRole(ADMIN_ROLE) nonReentrant {
-        NFTWithdrawal memory withdrawal = pendingNFTWithdrawals[withdrawalId];
-        require(withdrawal.to != address(0), "Withdrawal not found");
-        require(
-            block.timestamp >= withdrawal.withdrawalTime,
-            "Withdrawal delay not elapsed"
+            to
         );
 
-        delete pendingNFTWithdrawals[withdrawalId];
-        _unreserve(
-            withdrawal.tokenContract,
-            withdrawal.tokenId,
-            withdrawal.amount,
-            withdrawal.isERC721
-        );
-        _sendPrize(
-            withdrawal.tokenContract,
-            withdrawal.tokenId,
-            withdrawal.amount,
-            withdrawal.isERC721,
-            withdrawal.to
-        );
-
-        emit NFTWithdrawn(
-            withdrawalId,
-            withdrawal.tokenContract,
-            withdrawal.tokenId,
-            withdrawal.amount,
-            withdrawal.isERC721,
-            withdrawal.to
+        emit PrizeRedeemed(
+            rarityId,
+            prize.tokenContract,
+            prize.tokenId,
+            prize.amount,
+            prize.isERC721,
+            to
         );
     }
 
@@ -849,6 +846,7 @@ contract GachaMachine is
     }
 
     function _setVRFConfig(VRFConfig memory config) private {
+        require(config.coordinator == vrfCoordinator, "Coordinator locked");
         require(config.callbackGasLimit > 0, "Invalid callback gas");
         vrfConfig = config;
         emit VRFConfigUpdated(

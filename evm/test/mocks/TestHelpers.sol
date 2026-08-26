@@ -37,3 +37,20 @@ contract FalseReturnERC20 is ERC20 {
         return false;
     }
 }
+
+/// @dev Reports ERC1155 but never moves tokens.
+contract NoopERC1155 {
+    bytes4 private constant ERC1155_ID = 0xd9b67a26;
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == ERC1155_ID || id == 0x01ffc9a7;
+    }
+
+    function safeTransferFrom(address, address, uint256, uint256, bytes calldata) external {}
+
+    function balanceOf(address, uint256) external pure returns (uint256) {
+        return 0;
+    }
+
+    function setApprovalForAll(address, bool) external {}
+}

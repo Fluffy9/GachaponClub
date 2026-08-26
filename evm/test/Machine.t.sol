@@ -907,65 +907,7 @@ contract GachaMachineTest is Test {
         vm.stopPrank();
     }
 
-    function testScheduleAndExecuteNFTWithdrawal() public {
-        vm.startPrank(admin);
-        machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
-        machine.approveNFT(COMMON_RARITY, address(prizeNFT), true);
-        vm.stopPrank();
-
-        vm.startPrank(owner);
-        prizeNFT.mint(user, COMMON_PRIZE_1, 1);
-        vm.stopPrank();
-
-        vm.startPrank(user);
-        prizeNFT.setApprovalForAll(address(machine), true);
-        machine.donateNFT(address(prizeNFT), COMMON_PRIZE_1, 1, COMMON_RARITY);
-        vm.stopPrank();
-
-        vm.startPrank(admin);
-        bytes32 withdrawalId = machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, user);
-        assertEq(machine.getPrizeCount(COMMON_RARITY), 0);
-
-        vm.expectRevert("Withdrawal delay not elapsed");
-        machine.executeNFTWithdrawal(withdrawalId);
-
-        vm.warp(block.timestamp + 1 weeks);
-        machine.executeNFTWithdrawal(withdrawalId);
-        vm.stopPrank();
-
-        assertEq(prizeNFT.balanceOf(user, COMMON_PRIZE_1), 1);
-        assertEq(prizeNFT.balanceOf(address(machine), COMMON_PRIZE_1), 0);
-    }
-
-    function testScheduleAndExecuteERC721Withdrawal() public {
-        vm.startPrank(admin);
-        machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
-        machine.approveNFT(COMMON_RARITY, address(prizeERC721), true);
-        uint256 tokenId = prizeERC721.mint(user);
-        vm.stopPrank();
-
-        vm.startPrank(user);
-        prizeERC721.approve(address(machine), tokenId);
-        machine.donateNFT(address(prizeERC721), tokenId, 1, COMMON_RARITY);
-        vm.stopPrank();
-
-        vm.startPrank(admin);
-        bytes32 withdrawalId = machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, user);
-        vm.warp(block.timestamp + 1 weeks);
-        machine.executeNFTWithdrawal(withdrawalId);
-        vm.stopPrank();
-
-        assertEq(prizeERC721.ownerOf(tokenId), user);
-    }
-
-    function testNonAdminCannotScheduleWithdrawal() public {
-        vm.startPrank(user);
-        vm.expectRevert();
-        machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, user);
-        vm.stopPrank();
-    }
-
-    function testNonAdminCannotExecuteWithdrawal() public {
+    function testWithdrawPrize_sendsImmediately() public {
         vm.startPrank(admin);
         machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
         machine.approveNFT(COMMON_RARITY, address(prizeNFT), true);
@@ -981,15 +923,39 @@ contract GachaMachineTest is Test {
         vm.stopPrank();
 
         vm.prank(admin);
-        bytes32 withdrawalId = machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, user);
+        machine.withdrawPrize(COMMON_RARITY, 0, address(prizeNFT), COMMON_PRIZE_1, user);
+
+        assertEq(machine.getPrizeCount(COMMON_RARITY), 0);
+        assertEq(prizeNFT.balanceOf(user, COMMON_PRIZE_1), 1);
+        assertEq(prizeNFT.balanceOf(address(machine), COMMON_PRIZE_1), 0);
+    }
+
+    function testWithdrawPrize_erc721() public {
+        vm.startPrank(admin);
+        machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
+        machine.approveNFT(COMMON_RARITY, address(prizeERC721), true);
+        uint256 tokenId = prizeERC721.mint(user);
+        vm.stopPrank();
 
         vm.startPrank(user);
+        prizeERC721.approve(address(machine), tokenId);
+        machine.donateNFT(address(prizeERC721), tokenId, 1, COMMON_RARITY);
+        vm.stopPrank();
+
+        vm.prank(admin);
+        machine.withdrawPrize(COMMON_RARITY, 0, address(prizeERC721), tokenId, user);
+
+        assertEq(prizeERC721.ownerOf(tokenId), user);
+    }
+
+    function testNonAdminCannotWithdrawPrize() public {
+        vm.startPrank(user);
         vm.expectRevert();
-        machine.executeNFTWithdrawal(withdrawalId);
+        machine.withdrawPrize(COMMON_RARITY, 0, address(prizeNFT), 0, user);
         vm.stopPrank();
     }
 
-    function testCannotScheduleWithdrawalToZeroAddress() public {
+    function testCannotWithdrawPrizeToZeroAddress() public {
         vm.startPrank(admin);
         machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
         machine.approveNFT(COMMON_RARITY, address(prizeNFT), true);
@@ -1006,21 +972,14 @@ contract GachaMachineTest is Test {
 
         vm.prank(admin);
         vm.expectRevert("Invalid recipient");
-        machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, address(0));
+        machine.withdrawPrize(COMMON_RARITY, 0, address(prizeNFT), COMMON_PRIZE_1, address(0));
     }
 
-    function testCannotScheduleWithdrawalForEmptyBag() public {
+    function testCannotWithdrawPrizeForEmptyBag() public {
         vm.startPrank(admin);
         machine.registerRarity(address(commonNFT), "Common", 0.01 ether);
         vm.expectRevert("Invalid prize index");
-        machine.schedulePrizeWithdrawal(COMMON_RARITY, 0, user);
-        vm.stopPrank();
-    }
-
-    function testCannotExecuteNonexistentWithdrawal() public {
-        vm.startPrank(admin);
-        vm.expectRevert("Withdrawal not found");
-        machine.executeNFTWithdrawal(bytes32(0));
+        machine.withdrawPrize(COMMON_RARITY, 0, address(prizeNFT), 0, user);
         vm.stopPrank();
     }
 

@@ -235,6 +235,67 @@ contract MachineV2Test is Test {
         machine.cancelVrfSubscription(user);
     }
 
+    function test_createVrfSubscription_afterCancel_enablesPlay() public {
+        GachaMachine owned = _machineWithOwnedSub();
+        vm.prank(admin);
+        prize.mint(user, TOKEN_ID, 1);
+        vm.startPrank(user);
+        prize.setApprovalForAll(address(owned), true);
+        owned.donateNFT(address(prize), TOKEN_ID, 1, COMMON);
+        vm.stopPrank();
+
+        vm.prank(admin);
+        owned.cancelVrfSubscription(admin);
+
+        vm.prank(admin);
+        owned.createVrfSubscription();
+        (,, uint256 subId,,,) = owned.vrfConfig();
+        assertGt(subId, 0);
+
+        vm.startPrank(user);
+        commonCap.setApprovalForAll(address(owned), true);
+        uint256 requestId = owned.play(COMMON);
+        vm.stopPrank();
+        assertGt(requestId, 0);
+    }
+
+    function test_createVrfSubscription_revertsIfSubExists() public {
+        vm.prank(admin);
+        vm.expectRevert("Subscription exists");
+        machine.createVrfSubscription();
+    }
+
+    function test_donate_revertsIfTransferDoesNotLand() public {
+        NoopERC1155 noop = new NoopERC1155();
+        vm.prank(admin);
+        machine.approveNFT(COMMON, address(noop), true);
+        vm.prank(user);
+        vm.expectRevert("Transfer failed");
+        machine.donateNFT(address(noop), 1, 1, COMMON);
+    }
+
+    function test_withdrawPrize_revertsWrongIdentity() public {
+        vm.prank(admin);
+        prize.mint(user, TOKEN_ID, 1);
+        vm.startPrank(user);
+        prize.setApprovalForAll(address(machine), true);
+        machine.donateNFT(address(prize), TOKEN_ID, 1, COMMON);
+        vm.stopPrank();
+
+        vm.prank(admin);
+        vm.expectRevert("Wrong prize");
+        machine.withdrawPrize(COMMON, 0, address(prize), TOKEN_ID + 1, admin);
+    }
+
+    function test_approveNFT_freezesTokenStandard() public {
+        assertEq(machine.tokenStandard(address(prize)), machine.TOKEN_ERC1155());
+        vm.prank(admin);
+        machine.approveNFT(COMMON, address(prize), false);
+        vm.prank(admin);
+        machine.approveNFT(COMMON, address(prize), true);
+        assertEq(machine.tokenStandard(address(prize)), machine.TOKEN_ERC1155());
+    }
+
     function _machineWithOwnedSub() internal returns (GachaMachine owned) {
         GachaMachine.VRFConfig memory cfg = MachineHarness.vrfConfig(address(vrf));
         cfg.subscriptionId = 0;

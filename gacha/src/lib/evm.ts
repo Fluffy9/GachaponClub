@@ -210,6 +210,19 @@ export const MACHINE_ABI = [
     },
     {
         type: 'function',
+        name: 'withdrawPrize',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'rarityId', type: 'uint256' },
+            { name: 'index', type: 'uint256' },
+            { name: 'tokenContract', type: 'address' },
+            { name: 'tokenId', type: 'uint256' },
+            { name: 'to', type: 'address' },
+        ],
+        outputs: [],
+    },
+    {
+        type: 'function',
         name: 'fundVrf',
         stateMutability: 'payable',
         inputs: [],
@@ -220,6 +233,13 @@ export const MACHINE_ABI = [
         name: 'cancelVrfSubscription',
         stateMutability: 'nonpayable',
         inputs: [{ name: 'to', type: 'address' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'createVrfSubscription',
+        stateMutability: 'nonpayable',
+        inputs: [],
         outputs: [],
     },
     {

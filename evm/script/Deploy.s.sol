@@ -63,6 +63,9 @@ contract Deploy is Script {
         common.grantRole(minter, address(machine));
         rare.grantRole(minter, address(machine));
         epic.grantRole(minter, address(machine));
+        common.revokeRole(minter, deployer);
+        rare.revokeRole(minter, deployer);
+        epic.revokeRole(minter, deployer);
 
         vm.stopBroadcast();
 

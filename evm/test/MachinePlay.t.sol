@@ -157,16 +157,16 @@ contract MachinePlayTest is Test {
         vm.stopPrank();
     }
 
-    function test_play_revertsIfVrfNotConfigured() public {
+    function test_setVRFConfig_revertsCoordinatorChange() public {
         _donate1155(TOKEN_ID, 1);
         _buyAndApproveCapsule();
 
         GachaMachine.VRFConfig memory cfg = MachineHarness.vrfConfig(address(0));
         vm.prank(admin);
+        vm.expectRevert("Coordinator locked");
         machine.setVRFConfig(cfg);
 
         vm.prank(user);
-        vm.expectRevert("VRF not configured");
         machine.play(COMMON);
     }
 
@@ -189,6 +189,17 @@ contract MachinePlayTest is Test {
         cfg.callbackGasLimit = 0;
         vm.prank(admin);
         vm.expectRevert("Invalid callback gas");
+        machine.setVRFConfig(cfg);
+    }
+
+    function test_setVRFConfig_revertsWhilePendingDraws() public {
+        _donate1155(TOKEN_ID, 1);
+        _buyAndApproveCapsule();
+        _play();
+
+        GachaMachine.VRFConfig memory cfg = MachineHarness.vrfConfig(address(vrf));
+        vm.prank(admin);
+        vm.expectRevert("Pending draws");
         machine.setVRFConfig(cfg);
     }
 
@@ -379,6 +390,6 @@ contract MachinePlayTest is Test {
 
         vm.prank(admin);
         vm.expectRevert("Prize reserved");
-        machine.schedulePrizeWithdrawal(COMMON, 0, admin);
+        machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, admin);
     }
 }

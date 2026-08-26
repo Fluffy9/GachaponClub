@@ -396,28 +396,23 @@ contract GachaMachineCoverage is Test {
         machine.withdraw(address(bad), 1 ether, admin);
     }
 
-    function test_schedulePrizeWithdrawal_revertsEmptyBag() public {
+    function test_withdrawPrize_revertsEmptyBag() public {
         _registerCommon();
         vm.prank(admin);
         vm.expectRevert("Invalid prize index");
-        machine.schedulePrizeWithdrawal(COMMON, 0, user);
+        machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, user);
     }
 
-    function test_executeNFTWithdrawal_cannotRunTwice() public {
+    function test_withdrawPrize_cannotRunTwice() public {
         _registerCommon();
         _approveAndMint1155(1);
         vm.prank(user);
         machine.donateNFT(address(prize1155), TOKEN_ID, 1, COMMON);
 
-        vm.prank(admin);
-        bytes32 withdrawalId = machine.schedulePrizeWithdrawal(COMMON, 0, user);
-
-        vm.warp(block.timestamp + 1 weeks);
-
         vm.startPrank(admin);
-        machine.executeNFTWithdrawal(withdrawalId);
-        vm.expectRevert("Withdrawal not found");
-        machine.executeNFTWithdrawal(withdrawalId);
+        machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, user);
+        vm.expectRevert("Invalid prize index");
+        machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, user);
         vm.stopPrank();
     }
 
@@ -428,13 +423,8 @@ contract GachaMachineCoverage is Test {
         machine.donateNFT(address(prize1155), TOKEN_ID, 1, COMMON);
 
         vm.prank(admin);
-        bytes32 withdrawalId = machine.schedulePrizeWithdrawal(COMMON, 0, other);
+        machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, other);
         assertEq(machine.getPrizeCount(COMMON), 0);
-
-        vm.warp(block.timestamp + 1 weeks);
-        vm.prank(admin);
-        machine.executeNFTWithdrawal(withdrawalId);
-
         assertEq(prize1155.balanceOf(other, TOKEN_ID), 1);
 
         vm.prank(admin);
