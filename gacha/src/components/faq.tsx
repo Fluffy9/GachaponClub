@@ -25,7 +25,7 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "Can I donate my NFT?",
-    answer: "Any NFT is (theoretically) capable of being donated to the machine but only admin approved NFT collections are allowed to be donated. By donating, you will receive a capsule of the same tier.",
+    answer: "Admin-approved collections can be donated into one or more bags. When you donate, you pick the bag. You receive one capsule of that same tier.",
   },
   {
     question: "How do I open a capsule?",

@@ -36,6 +36,11 @@ contract GachaNFTTest is Test {
 
         vm.prank(owner);
         gacha.grantRole(minterRole, minter);
+
+        vm.startPrank(owner);
+        gacha.addRarity(RARE);
+        gacha.addRarity(EPIC);
+        vm.stopPrank();
     }
 
     // -------------------------------------------------------------------------
@@ -47,15 +52,17 @@ contract GachaNFTTest is Test {
         assertTrue(gacha.hasRole(minterRole, owner));
     }
 
-    function test_constructor_enablesDefaultRarities() public view {
-        assertTrue(gacha.rarityExists(COMMON));
-        assertTrue(gacha.rarityExists(RARE));
-        assertTrue(gacha.rarityExists(EPIC));
-        assertTrue(gacha.enabledRarities(COMMON));
-        assertTrue(gacha.enabledRarities(RARE));
-        assertTrue(gacha.enabledRarities(EPIC));
-        assertFalse(gacha.rarityExists(3));
-        assertFalse(gacha.enabledRarities(3));
+    function test_constructor_enablesDefaultRarities() public {
+        vm.prank(owner);
+        GachaNFT fresh = new GachaNFT();
+        assertTrue(fresh.rarityExists(COMMON));
+        assertTrue(fresh.enabledRarities(COMMON));
+        assertEq(fresh.CAPSULE_ID(), COMMON);
+        assertFalse(fresh.rarityExists(RARE));
+        assertFalse(fresh.rarityExists(EPIC));
+        assertFalse(fresh.enabledRarities(RARE));
+        assertFalse(fresh.rarityExists(3));
+        assertFalse(fresh.enabledRarities(3));
     }
 
     function test_uri_usesConfiguredBase() public view {
@@ -88,7 +95,7 @@ contract GachaNFTTest is Test {
     function test_addRarity_revertsIfAlreadyExists() public {
         vm.prank(owner);
         vm.expectRevert("Rarity already exists");
-        gacha.addRarity(COMMON);
+        gacha.addRarity(RARE);
     }
 
     function test_addRarity_revertsForNonAdmin() public {

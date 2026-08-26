@@ -136,13 +136,13 @@ export const MACHINE_ABI = [
     },
     {
         type: 'function',
-        name: 'getApprovedNFT',
+        name: 'isApprovedForRarity',
         stateMutability: 'view',
-        inputs: [{ name: 'tokenContract', type: 'address' }],
-        outputs: [
-            { name: 'approved', type: 'bool' },
+        inputs: [
+            { name: 'tokenContract', type: 'address' },
             { name: 'rarityId', type: 'uint256' },
         ],
+        outputs: [{ name: '', type: 'bool' }],
     },
     {
         type: 'function',
@@ -177,6 +177,18 @@ export const MACHINE_ABI = [
     },
     {
         type: 'function',
+        name: 'donateNFT',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'tokenContract', type: 'address' },
+            { name: 'tokenId', type: 'uint256' },
+            { name: 'amount', type: 'uint256' },
+            { name: 'rarityId', type: 'uint256' },
+        ],
+        outputs: [],
+    },
+    {
+        type: 'function',
         name: 'withdraw',
         stateMutability: 'nonpayable',
         inputs: [
@@ -205,9 +217,51 @@ export const MACHINE_ABI = [
     },
     {
         type: 'function',
-        name: 'changeAdmin',
+        name: 'cancelVrfSubscription',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'to', type: 'address' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'paused',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ name: '', type: 'bool' }],
+    },
+    {
+        type: 'function',
+        name: 'pause',
+        stateMutability: 'nonpayable',
+        inputs: [],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'unpause',
+        stateMutability: 'nonpayable',
+        inputs: [],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'transferAdmin',
         stateMutability: 'nonpayable',
         inputs: [{ name: 'newAdmin', type: 'address' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'acceptAdmin',
+        stateMutability: 'nonpayable',
+        inputs: [],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'rescueStuckDraw',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'requestId', type: 'uint256' }],
         outputs: [],
     },
     {
@@ -216,6 +270,7 @@ export const MACHINE_ABI = [
         inputs: [
             { name: 'rarityId', type: 'uint256', indexed: true },
             { name: 'tokenContract', type: 'address', indexed: false },
+            { name: 'approved', type: 'bool', indexed: false },
         ],
     },
     {
@@ -267,6 +322,19 @@ export const ERC1155_ABI = [
         inputs: [
             { name: 'operator', type: 'address' },
             { name: 'approved', type: 'bool' },
+        ],
+        outputs: [],
+    },
+] as const;
+
+export const ERC721_ABI = [
+    {
+        type: 'function',
+        name: 'approve',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'to', type: 'address' },
+            { name: 'tokenId', type: 'uint256' },
         ],
         outputs: [],
     },
@@ -398,7 +466,7 @@ export async function fetchEvmCapsuleBalances(owner: Address) {
             address: entry.address,
             abi: ERC1155_ABI,
             functionName: 'balanceOf',
-            args: [owner, BigInt(entry.rarityId)],
+            args: [owner, 0n],
         });
         const qty = Number(balance);
         for (let i = 0; i < qty; i++) {
@@ -565,6 +633,7 @@ export async function fetchEvmApprovedNfts(): Promise<EvmApprovedNft[]> {
                 inputs: [
                     { name: 'rarityId', type: 'uint256', indexed: true },
                     { name: 'tokenContract', type: 'address', indexed: false },
+                    { name: 'approved', type: 'bool', indexed: false },
                 ],
             },
             fromBlock: EVM_DEPLOY_FROM_BLOCK,
@@ -581,19 +650,20 @@ export async function fetchEvmApprovedNfts(): Promise<EvmApprovedNft[]> {
 
     const approved: EvmApprovedNft[] = [];
     for (const tokenContract of contracts) {
-        const [isApproved, rarityId] = await evmPublicClient.readContract({
-            address: EVM_MACHINE_ADDRESS,
-            abi: MACHINE_ABI,
-            functionName: 'getApprovedNFT',
-            args: [tokenContract],
-        });
-        if (!isApproved) continue;
-        const id = Number(rarityId);
-        approved.push({
-            address: tokenContract,
-            rarityId: id,
-            tier: TIER_BY_ID[id] ?? 'common',
-        });
+        for (let id = 0; id < 3; id++) {
+            const isApproved = await evmPublicClient.readContract({
+                address: EVM_MACHINE_ADDRESS,
+                abi: MACHINE_ABI,
+                functionName: 'isApprovedForRarity',
+                args: [tokenContract, BigInt(id)],
+            });
+            if (!isApproved) continue;
+            approved.push({
+                address: tokenContract,
+                rarityId: id,
+                tier: TIER_BY_ID[id] ?? 'common',
+            });
+        }
     }
     return approved;
 }

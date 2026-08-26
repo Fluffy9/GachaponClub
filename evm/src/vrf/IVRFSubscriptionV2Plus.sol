@@ -8,4 +8,6 @@ interface IVRFSubscriptionV2Plus {
     function addConsumer(uint256 subId, address consumer) external;
 
     function fundSubscriptionWithNative(uint256 subId) external payable;
+
+    function cancelSubscription(uint256 subId, address to) external;
 }

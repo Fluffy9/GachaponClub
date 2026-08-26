@@ -31,7 +31,7 @@ contract PrizePoolHandler is Test {
         amount = bound(amount, 1, 50);
         prize.mint(user, TOKEN_ID, amount);
         vm.prank(user);
-        machine.donateNFT(address(prize), TOKEN_ID, amount);
+        machine.donateNFT(address(prize), TOKEN_ID, amount, 0);
         ghostPrizeCount++;
         ghostBalance += amount;
     }
@@ -40,7 +40,7 @@ contract PrizePoolHandler is Test {
         uint256 count = machine.getPrizeCount(0);
         if (count == 0) return;
 
-        (, uint256 amount) = machine.getPrizeInfo(0, count - 1);
+        uint256 amount = machine.getPrizeInfo(0, count - 1).amount;
         vm.prank(admin);
         machine.redeemPrize(0, user);
         ghostPrizeCount--;
@@ -71,6 +71,10 @@ contract PrizePoolInvariantTest is Test {
         vm.startPrank(admin);
         machine.registerRarity(address(capsule), "Common", 0.01 ether);
         machine.approveNFT(0, address(prize), true);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        capsule.grantRole(capsule.MINTER_ROLE(), address(machine));
         vm.stopPrank();
 
         vm.prank(user);

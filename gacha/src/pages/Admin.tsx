@@ -244,19 +244,76 @@ export default function Admin() {
         });
     };
 
+    const handleCancelVrf = async () => {
+        await runAdmin('Canceled VRF subscription', async () => {
+            if (!address || !isAddress(address)) {
+                throw new Error('Connect an admin wallet to receive leftover VRF funds');
+            }
+            if (!window.confirm(
+                `Cancel the machine-owned VRF subscription and send leftover LINK/ETH to ${address}? Play will fail until a new subscription is configured. This cannot recover funds on the previous live machine.`
+            )) {
+                throw new Error('Cancel aborted');
+            }
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'cancelVrfSubscription',
+                args: [address as Address],
+            });
+        });
+    };
+
     const handleChangeAdmin = async () => {
-        await runAdmin('Admin role transferred', async () => {
+        await runAdmin('Admin transfer started — new admin must accept', async () => {
             if (!isAddress(newAdmin)) throw new Error('Enter a valid address');
-            if (!window.confirm(`Transfer ADMIN_ROLE to ${newAdmin}? This wallet will lose admin.`)) {
+            if (!window.confirm(`Start two-step transfer of DEFAULT_ADMIN and ADMIN_ROLE to ${newAdmin}?`)) {
                 throw new Error('Transfer cancelled');
             }
             await callContract({
                 chain: 'eth',
                 contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'changeAdmin',
+                method: 'transferAdmin',
                 args: [newAdmin as Address],
             });
             setNewAdmin("");
+        });
+    };
+
+    const handleAcceptAdmin = async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            setSuccess(null);
+            if (!isConnected || walletType === 'sui') {
+                openPopup(<WalletPopup />, "Your Wallet");
+                throw new Error('Connect the pending admin wallet on Base');
+            }
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'acceptAdmin',
+                args: [],
+            });
+            setSuccess('Admin transfer accepted');
+            toast.success('Admin transfer accepted');
+            await Promise.all([refresh(), fetchPrizePool()]);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to accept admin';
+            setError(message);
+            toast.error(message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handlePause = async (paused: boolean) => {
+        await runAdmin(paused ? 'Machine paused' : 'Machine unpaused', async () => {
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: paused ? 'pause' : 'unpause',
+                args: [],
+            });
         });
     };
 
@@ -426,8 +483,8 @@ export default function Admin() {
                                     <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">How to Approve NFTs</h3>
                                     <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800 dark:text-blue-200">
                                         <li>Enter the ERC721 or ERC1155 contract address</li>
-                                        <li>Select the bag it can be donated into (common, rare, or epic)</li>
-                                        <li>Players still need to <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded">approve</code> the machine before donating</li>
+                                        <li>Select a bag. The same collection can be approved for more than one bag</li>
+                                        <li>Donors pick which bag (and which capsule) when they donate</li>
                                     </ol>
                                 </div>
                                 <div className="space-y-4">
@@ -472,7 +529,7 @@ export default function Admin() {
                                     </div>
                                     <div className="space-y-2">
                                         {approvedNfts.map((nft) => (
-                                            <div key={nft.address} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg gap-4">
+                                            <div key={`${nft.address}-${nft.tier}`} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg gap-4">
                                                 <div>
                                                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                                         {nft.tier.charAt(0).toUpperCase() + nft.tier.slice(1)} bag
@@ -622,7 +679,38 @@ export default function Admin() {
                                         >
                                             Fund subscription
                                         </button>
+                                        <button
+                                            onClick={handleCancelVrf}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Cancel subscription
+                                        </button>
                                     </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Cancel sends leftover VRF ETH/LINK to the connected wallet. Play stays off until a new subscription is set. Pending draws must finish or be rescued first.
+                                    </p>
+                                </div>
+
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Pause</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex gap-3">
+                                        <button
+                                            onClick={() => handlePause(true)}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50"
+                                        >
+                                            Pause buy / play / donate
+                                        </button>
+                                        <button
+                                            onClick={() => handlePause(false)}
+                                            disabled={!writesEnabled}
+                                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
+                                        >
+                                            Unpause
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Claim and stuck-draw rescue stay available while paused.</p>
                                 </div>
 
                                 <div className="mb-6">
@@ -644,6 +732,13 @@ export default function Admin() {
                                             className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Transfer ADMIN_ROLE
+                                        </button>
+                                        <button
+                                            onClick={handleAcceptAdmin}
+                                            disabled={!isConnected || walletType === 'sui' || isLoading}
+                                            className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Accept transfer
                                         </button>
                                     </div>
                                 </div>

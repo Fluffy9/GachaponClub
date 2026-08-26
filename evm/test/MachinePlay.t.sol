@@ -61,10 +61,10 @@ contract MachinePlayTest is Test {
 
     function _donate1155(uint256 tokenId, uint256 amount) internal {
         vm.prank(admin);
-        prize1155.mint(user, tokenId, amount);
-        vm.startPrank(user);
+        prize1155.mint(other, tokenId, amount);
+        vm.startPrank(other);
         prize1155.setApprovalForAll(address(machine), true);
-        machine.donateNFT(address(prize1155), tokenId, amount);
+        machine.donateNFT(address(prize1155), tokenId, amount, COMMON);
         vm.stopPrank();
     }
 
@@ -99,7 +99,7 @@ contract MachinePlayTest is Test {
         assertEq(machine.getPrizeCount(COMMON), 1);
         assertEq(machine.pendingDraws(COMMON), 1);
         assertEq(machine.getAvailablePrizeCount(COMMON), 0);
-        (address player, uint256 rarityId, bool fulfilled) = machine.draws(requestId);
+        (address player, uint256 rarityId, bool fulfilled,) = machine.draws(requestId);
         assertEq(player, user);
         assertEq(rarityId, COMMON);
         assertFalse(fulfilled);
@@ -170,6 +170,20 @@ contract MachinePlayTest is Test {
         machine.play(COMMON);
     }
 
+    function test_play_revertsIfNoSubscription() public {
+        _donate1155(TOKEN_ID, 1);
+        _buyAndApproveCapsule();
+
+        GachaMachine.VRFConfig memory cfg = MachineHarness.vrfConfig(address(vrf));
+        cfg.subscriptionId = 0;
+        vm.prank(admin);
+        machine.setVRFConfig(cfg);
+
+        vm.prank(user);
+        vm.expectRevert("No subscription");
+        machine.play(COMMON);
+    }
+
     function test_setVRFConfig_revertsZeroCallbackGas() public {
         GachaMachine.VRFConfig memory cfg = MachineHarness.vrfConfig(address(vrf));
         cfg.callbackGasLimit = 0;
@@ -221,8 +235,7 @@ contract MachinePlayTest is Test {
         assertEq(prize1155.balanceOf(user, TOKEN_ID), 1);
         assertEq(prize1155.balanceOf(address(machine), TOKEN_ID), 0);
         assertEq(machine.getClaimCount(user), 0);
-        (uint256 remainingId,) = machine.getPrizeInfo(COMMON, 0);
-        assertEq(remainingId, TOKEN_ID + 1);
+        assertEq(machine.getPrizeInfo(COMMON, 0).tokenId, TOKEN_ID + 1);
     }
 
     function test_fulfill_picksLastIndex() public {
@@ -258,7 +271,7 @@ contract MachinePlayTest is Test {
         uint256 tokenId = prize721.mint(user);
         vm.startPrank(user);
         prize721.approve(address(machine), tokenId);
-        machine.donateNFT(address(prize721), tokenId, 1);
+        machine.donateNFT(address(prize721), tokenId, 1, COMMON);
         vm.stopPrank();
 
         _buyAndApproveCapsule();
@@ -359,26 +372,13 @@ contract MachinePlayTest is Test {
         assertEq(prize1155.balanceOf(address(machine), TOKEN_ID), 1);
     }
 
-    function test_withdrawDuringPendingDraw_refundsCapsule() public {
+    function test_cannotWithdrawReservedPrize() public {
         _donate1155(TOKEN_ID, 1);
         _buyAndApproveCapsule();
-        uint256 requestId = _play();
+        _play();
 
-        bytes32 withdrawalId =
-            keccak256(abi.encodePacked(address(prize1155), TOKEN_ID, uint256(1), admin, block.timestamp));
         vm.prank(admin);
-        machine.scheduleNFTWithdrawal(address(prize1155), TOKEN_ID, 1, admin);
-        vm.warp(block.timestamp + 1 weeks);
-        vm.prank(admin);
-        machine.executeNFTWithdrawal(withdrawalId);
-
-        vrf.fulfill(requestId, 0);
-
-        vm.prank(user);
-        machine.claim(0);
-
-        assertEq(capsule.balanceOf(user, COMMON), 1);
-        assertEq(prize1155.balanceOf(admin, TOKEN_ID), 1);
-        assertEq(machine.getPrizeCount(COMMON), 0);
+        vm.expectRevert("Prize reserved");
+        machine.schedulePrizeWithdrawal(COMMON, 0, admin);
     }
 }

@@ -10,11 +10,13 @@ import { base } from 'wagmi/chains';
 import { type Address } from 'viem';
 import {
     ERC1155_ABI,
+    ERC721_ABI,
     MACHINE_ABI,
     evmPublicClient,
     fetchEvmCapsuleBalances,
     fetchEvmPrizePool as fetchEvmPrizes,
     fetchEvmRarities,
+    fetchEvmApprovedNfts,
     type EvmRarity,
 } from '../../lib/evm';
 
@@ -137,6 +139,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     // Fetch approved NFTs from the machine
     const fetchApprovedNFTs = async () => {
+        if (walletType === 'eth' || (ethConnected && !suiConnected)) {
+            try {
+                const approved = await fetchEvmApprovedNfts();
+                setApprovedNFTs(approved.map((nft) => ({
+                    type: nft.address,
+                    tier: nft.tier,
+                    name: `${nft.address.slice(0, 6)}…${nft.address.slice(-4)}`,
+                    module: nft.address,
+                    packageId: nft.address,
+                    imageUrl: getImageUrl(`/${nft.tier}.gif`),
+                    description: `${nft.tier} bag`,
+                })));
+            } catch (error) {
+                console.error('Failed to fetch Base approved NFTs:', error);
+                setApprovedNFTs([]);
+            }
+            return;
+        }
+
         try {
             console.log('=== Starting fetchApprovedNFTs in wallet provider ===');
             console.log('Fetching machine object with ID:', SUI_MACHINE_ID);
@@ -630,7 +651,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                     await switchChainAsync({ chainId: base.id });
                 }
 
-                const abi = params.method === 'setApprovalForAll' ? ERC1155_ABI : MACHINE_ABI;
+                const abi =
+                    params.method === 'setApprovalForAll'
+                        ? ERC1155_ABI
+                        : params.method === 'approve'
+                            ? ERC721_ABI
+                            : MACHINE_ABI;
                 const hash = await walletClient.writeContract({
                     address: params.contractAddress as Address,
                     abi,

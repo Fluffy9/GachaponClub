@@ -26,12 +26,26 @@ contract VRFCoordinatorV2PlusMock is IVRFCoordinatorV2Plus {
     }
 
     uint256 public nextSubId = 1;
+    mapping(uint256 => uint256) public nativeBalance;
+    mapping(uint256 => address) public subOwner;
 
     function createSubscription() external returns (uint256 subId) {
         subId = nextSubId++;
+        subOwner[subId] = msg.sender;
     }
 
     function addConsumer(uint256, address) external {}
 
-    function fundSubscriptionWithNative(uint256) external payable {}
+    function fundSubscriptionWithNative(uint256 subId) external payable {
+        nativeBalance[subId] += msg.value;
+    }
+
+    function cancelSubscription(uint256 subId, address to) external {
+        require(subOwner[subId] == msg.sender, "not owner");
+        uint256 amount = nativeBalance[subId];
+        nativeBalance[subId] = 0;
+        subOwner[subId] = address(0);
+        (bool ok,) = to.call{value: amount}("");
+        require(ok, "native refund failed");
+    }
 }

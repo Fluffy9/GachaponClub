@@ -7,32 +7,24 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title GachaNFT
- * @dev Marketplace-friendly ERC1155 capsules. Token ids are rarity levels.
- *      Pricing and purchase live on GachaMachine so this contract stays a
- *      plain ERC1155.
+ * @dev One capsule collection per rarity. The machine mints and burns token id 0.
+ *      Extra ids can be added by the admin; they are unused by GachaMachine.
  */
 contract GachaNFT is ERC1155Burnable, AccessControl {
-    /// @dev Event emitted when a new capsule is minted
     event CapsuleMinted(address indexed to, uint256 rarityId, uint256 amount);
-
-    /// @dev Event emitted when a new rarity is added
     event RarityAdded(uint256 indexed rarityId);
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    /// @dev True once a rarity id has been created. Survives disable.
-    mapping(uint256 => bool) public rarityExists;
+    uint256 public constant CAPSULE_ID = 0;
 
-    /// @dev Mapping of rarity IDs to their enabled status
+    mapping(uint256 => bool) public rarityExists;
     mapping(uint256 => bool) public enabledRarities;
 
     constructor() ERC1155("https://gachapon.club/api/rarity/{id}.json") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
-
-        _addRarity(0); // COMMON
-        _addRarity(1); // RARE
-        _addRarity(2); // EPIC
+        _addRarity(CAPSULE_ID);
     }
 
     function supportsInterface(

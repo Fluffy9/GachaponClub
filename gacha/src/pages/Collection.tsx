@@ -292,11 +292,11 @@ export default function Collection() {
                         className="flex justify-center"
                     >
                         <img
-                            src="/logo.png"
-                            alt="Gachapon Club Logo - A stylized text logo with pixel art decorations"
-                            width={300}
-                            height={150}
-                            className="drop-shadow-md transition-all duration-300"
+                            src="/logo.svg"
+                            alt="Gachapon Club"
+                            width={480}
+                            height={200}
+                            className="w-[min(92vw,28rem)] h-auto drop-shadow-md"
                         />
                     </motion.div>
                 </div>

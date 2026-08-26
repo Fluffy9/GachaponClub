@@ -7,6 +7,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { toast } from 'sonner';
 import { formatAddress } from '../lib/utils';
 import { getEvmClaimCount, isCapsuleApproved } from '../lib/evm';
+import { isAddress, type Address } from 'viem';
 
 interface Capsule extends NFT {
     quantity: number;
@@ -68,6 +69,11 @@ export function Inventory() {
     const [redeemError, setRedeemError] = useState<string | null>(null);
     const [donationSuccess, setDonationSuccess] = useState<string | null>(null);
     const [redeemSuccess, setRedeemSuccess] = useState<string | null>(null);
+    const [donateContract, setDonateContract] = useState('');
+    const [donateTokenId, setDonateTokenId] = useState('');
+    const [donateAmount, setDonateAmount] = useState('1');
+    const [donateStandard, setDonateStandard] = useState<'erc721' | 'erc1155'>('erc721');
+    const [donateTier, setDonateTier] = useState<'common' | 'rare' | 'epic'>('common');
 
     // Fetch data when component mounts and when activeTab changes
     useEffect(() => {
@@ -199,7 +205,76 @@ export function Inventory() {
         const num = parseFloat(amount) / Math.pow(10, decimals);
         return num.toFixed(4);
     };
+
+    const evmDonateTiers = useMemo(() => {
+        if (!isAddress(donateContract)) return [];
+        const addr = donateContract.toLowerCase();
+        return approvedNFTs
+            .filter((nft) => nft.type.toLowerCase() === addr)
+            .map((nft) => nft.tier as 'common' | 'rare' | 'epic');
+    }, [approvedNFTs, donateContract]);
+
+    const handleEvmDonate = async () => {
+        try {
+            if (!address) throw new Error('Wallet not connected');
+            if (!isAddress(donateContract)) throw new Error('Enter an NFT contract address');
+            if (!donateTokenId) throw new Error('Enter a token id');
+            const rarityId = EVM_RARITY_ID[donateTier];
+            if (evmDonateTiers.length > 0 && !evmDonateTiers.includes(donateTier)) {
+                throw new Error(`This collection is not approved for the ${donateTier} bag`);
+            }
+            const tokenId = BigInt(donateTokenId);
+            const amount = donateStandard === 'erc721' ? 1n : BigInt(donateAmount || '1');
+            if (amount < 1n) throw new Error('Amount must be at least 1');
+
+            setIsDonating(donateContract);
+            setDonationError(null);
+            setDonationSuccess(null);
+
+            if (donateStandard === 'erc721') {
+                await callContract({
+                    chain: 'eth',
+                    contractAddress: donateContract,
+                    method: 'approve',
+                    args: [EVM_MACHINE_ADDRESS as Address, tokenId],
+                });
+            } else {
+                await callContract({
+                    chain: 'eth',
+                    contractAddress: donateContract,
+                    method: 'setApprovalForAll',
+                    args: [EVM_MACHINE_ADDRESS as Address, true],
+                });
+            }
+
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: 'donateNFT',
+                args: [donateContract as Address, tokenId, amount, BigInt(rarityId)],
+            });
+
+            const label = `Donated to ${donateTier} bag`;
+            setDonationSuccess(label);
+            toast.success(`${label} — you received a ${donateTier} capsule`);
+            await Promise.all([
+                fetchApprovedNFTs(),
+                fetchPrizePool(),
+                fetchNFTs(address),
+            ]);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to donate NFT';
+            setDonationError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setIsDonating(null);
+        }
+    };
+
     const handleDonate = async (nft: NFT) => {
+        if (walletType === 'eth') {
+            return;
+        }
         try {
             console.log('Starting donation for NFT:', nft);
             setIsDonating(nft.id);
@@ -781,6 +856,64 @@ export function Inventory() {
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                             Your NFTs
                         </h3>
+                        {walletType === 'eth' && (
+                            <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm space-y-3">
+                                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Donate to a bag</h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    Pick a bag this collection is approved for. You get one capsule of that tier.
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <input
+                                        value={donateContract}
+                                        onChange={(e) => setDonateContract(e.target.value)}
+                                        placeholder="NFT contract 0x…"
+                                        className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                    />
+                                    <input
+                                        value={donateTokenId}
+                                        onChange={(e) => setDonateTokenId(e.target.value)}
+                                        placeholder="Token id"
+                                        className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                    />
+                                    <select
+                                        value={donateStandard}
+                                        onChange={(e) => setDonateStandard(e.target.value as 'erc721' | 'erc1155')}
+                                        className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                    >
+                                        <option value="erc721">ERC-721</option>
+                                        <option value="erc1155">ERC-1155</option>
+                                    </select>
+                                    {donateStandard === 'erc1155' && (
+                                        <input
+                                            value={donateAmount}
+                                            onChange={(e) => setDonateAmount(e.target.value)}
+                                            placeholder="Amount"
+                                            className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                        />
+                                    )}
+                                    <select
+                                        value={donateTier}
+                                        onChange={(e) => setDonateTier(e.target.value as 'common' | 'rare' | 'epic')}
+                                        className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                    >
+                                        {(evmDonateTiers.length ? evmDonateTiers : ['common', 'rare', 'epic']).map((tier) => (
+                                            <option key={tier} value={tier}>
+                                                {tier.charAt(0).toUpperCase() + tier.slice(1)} bag
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button
+                                    onClick={handleEvmDonate}
+                                    disabled={Boolean(isDonating) || !donateContract || !donateTokenId}
+                                    className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg text-sm disabled:opacity-50"
+                                >
+                                    {isDonating ? 'Donating…' : 'Donate'}
+                                </button>
+                                {donationError && <p className="text-red-500 text-sm">{donationError}</p>}
+                                {donationSuccess && <p className="text-green-500 text-sm">{donationSuccess}</p>}
+                            </div>
+                        )}
                         <div className="flex flex-col gap-6">
                             {/* Approved NFTs Section */}
                             <div>
