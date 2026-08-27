@@ -53,16 +53,16 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "Can I sell my capsule?",
-    answer: "Yes, please do sell and trade amongst your friends.",
+    answer: "Yes. Capsule NFTs are 1155 semi-fungible tokens so a liquidity pool can be created for them.",
   },
   {
     question: "Can I donate my NFT?",
-    answer: "Admin-approved collections can be donated into one or more bags. When you donate, you pick the bag. You receive one capsule of that same tier. A bag cannot take donations while someone is in the middle of opening a capsule of that tier — wait a moment for VRF, or just buy a capsule if you only want the ticket. The operator can pull prizes from a bag at any time — this is a hot-wallet machine, not a timelocked vault.",
+    answer: "Yes, if the NFT is in an approved collection for a particular tier. You will receive one capsule of that same tier.",
   },
   {
     question: "How do I open a capsule?",
     answer:
-      "After purchasing your capsule, click on it inside your inventory to open it! Be certain that you want to open it, as this cannot be undone. When you open, the machine freezes the prizes that are in that bag at that moment and asks Chainlink VRF for a random index among those. That bag will not accept new donations until the draw finishes.",
+      "After purchasing your capsule, click on it inside your inventory to open it! Be certain that you want to open it, as this cannot be undone. When you open, you will receive a random prize from the tier of the capsule you opened. New donations are not accepted until the draw finishes.",
   },
   {
     question: "How do prize tiers work? (Technically)",
@@ -70,11 +70,11 @@ const faqItems: FAQItem[] = [
   },
   {
     question: "Tokenomics / Technical implications?",
-    answer: "The capsule prize is chosen when you open it, from the prizes sitting in that bag at that moment. Holding an unopened capsule still lets you wait for a donation before you open. Once a draw is in flight, that bag will not accept donations. Because of this, the value of a capsule can be roughly described as a probability based on the smart contract's (machine) holdings, what is within its prize tier, and how many capsules of this type are in the wild. This does dictate a mathematically provable floor price for capsule NFTs. An economist or admin may increase or decrease capsule prices based on market factors. There is also some very interesting price action that may occur based on what people THINK will be donated and when. For example, if someone plans to donate a Blue Chip NFT worth a million dollars to the machine, it suddenly makes mathematical sense to buy capsules now and use them after it's donated. In a way, it can also serve as an index to invest in the NFTs on a particular chain.",
+    answer: "A capsule represents an equal probability of winning any of the NFTs in the tier of the capsule you opened. The machine will randomly select one of the NFTs in the tier to be the prize (at the time of opening). This will pause donations for that tier until the draw finishes. Capsule mint prices may be adjusted in real time based on market factors. Prizes may be added or removed to maintain a balanced distribution.",
   },
   {
-    question: "Long term goal?",
-    answer: "Longer term, I see this project becoming owned and run by a DAO that is stewarding the Machine holdings. As it collects more and more NFTs, it becomes important to think about what value those NFTs can bring while they sit in the Machine. Implementing functionality such as flash loans would allow the DAO to play an active, positive role in governance in the various NFT communities we hold.",
+    question: "Roadmap?",
+    answer: "For the immediate future, the goal is to maintain a balanced distribution of NFTs and test out different economic mechanisms in the hopes of launching a sustainable DAO-owned project. ",
   },
   {
     question: "Contract addresses?",
@@ -162,7 +162,7 @@ export function FAQ() {
         <header className="flex items-center justify-center gap-2 border-b border-neutral-900 bg-[#ffe500] px-3 py-1.5 dark:border-neutral-600 dark:bg-[#c9b000]">
           <WarningMark />
           <h2 id="faq-heading" className="faq-panel-title">
-            Frequently Asked Questions
+            Information
           </h2>
         </header>
         <div className="faq-panel-body bg-white px-3 py-2 text-[13px] leading-[1.55] text-neutral-900 dark:bg-gray-800 dark:text-neutral-100">
