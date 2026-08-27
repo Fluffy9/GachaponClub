@@ -41,11 +41,11 @@ export const SUI_ADMIN_CAP_ID = '0xc35810e7c5ef2ed02d5dc92ce315b1292ba59392fae0a
 export const SUI_UPGRADE_CAP_ID = '0x39a8368814a477495d58ee5a0cf1556883beda89da90830398624c9e9afafdc6';
 
 /** Base mainnet GachaMachine. Used for reads when no wallet is connected. */
-export const EVM_MACHINE_ADDRESS = '0x3A6D915ac4Ade344ce058EbBC8BBF40B97F47BCf';
+export const EVM_MACHINE_ADDRESS = '0xA8957c7fFCa28727B491c41B19E7175204320608';
 export const EVM_NFT_ADDRESSES = {
-    COMMON: '0x10Fb057e34dDF5dFA36909B362c9FE40e9a62A83',
-    RARE: '0x22d8526A9025bB5587936428037A4a9563A410fb',
-    EPIC: '0xa56816506525e7CE7e3995183F03d207fA2dB573',
+    COMMON: '0xf7123b2d0DF91675d45AD4B0ED3CE8971455A2Fa',
+    RARE: '0x4D3B8dc0df39a8658921e250BBb66B5D15a0F519',
+    EPIC: '0x3950F364291cCca4a0D49333ecB772f761d4a7c4',
 } as const;
 export const EVM_RARITY_ID = {
     common: 0,
@@ -57,7 +57,7 @@ export const BASE_RPC_URL =
     'https://base-mainnet.g.alchemy.com/v2/FM6pjKevbBo4z7kCribWeWXwDJxGTV0_';
 export const BASE_EXPLORER_URL = 'https://basescan.org';
 export const WALLETCONNECT_PROJECT_ID = 'e151333bb1826587cfaf15c54011854a';
-export const EVM_DEPLOY_FROM_BLOCK = 50441000n;
+export const EVM_DEPLOY_FROM_BLOCK = 50502284n;
 
 /** @deprecated Use EVM_MACHINE_ADDRESS */
 export const ETH_CONTRACT_ADDRESS = EVM_MACHINE_ADDRESS;

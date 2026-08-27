@@ -22,7 +22,10 @@ interface IGachaNFT {
 /**
  * @title GachaMachine
  * @dev Capsule machine: buy or donate for a capsule, burn it for a VRF draw,
- *      then claim. Odds are computed at fulfillment time (% bag.length).
+ *      then claim. The eligible bag length is snapshotted at play so later
+ *      donations cannot steer `random % n` after the VRF word is public.
+ *      ADMIN_ROLE holds the bags. ECONOMIST_ROLE can reprice, toggle rarities,
+ *      and pause without withdraw access.
  */
 contract GachaMachine is
     AccessControl,
@@ -120,6 +123,8 @@ contract GachaMachine is
     event VRFSubscriptionCreated(uint256 indexed subscriptionId);
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    /// @dev Prices, rarity enable, pause/unpause. Cannot withdraw or approve collections.
+    bytes32 public constant ECONOMIST_ROLE = keccak256("ECONOMIST_ROLE");
 
     /// @dev Capsule ERC1155 id on every per-rarity GachaNFT.
     uint256 public constant CAPSULE_ID = 0;
@@ -157,14 +162,21 @@ contract GachaMachine is
         uint256 rarityId;
         bool fulfilled;
         uint64 requestedAt;
+        /// @dev `prizes[rarityId].length` when `play` ran. Fulfillment uses
+        ///      `random % min(bagLength, current bag)` so donations that land
+        ///      after play cannot inflate the modulo.
+        uint64 bagLength;
     }
 
     /// @dev `tokenContract == address(0)` means remint a capsule of `tokenId` rarity.
+    ///      Packed so `tokenContract` + `isERC721` + `assignedAt` share a slot.
+    ///      `assignedAt` is for off-chain monitoring; claim is not delayed on-chain.
     struct PrizeClaim {
         address tokenContract;
+        bool isERC721;
+        uint64 assignedAt;
         uint256 tokenId;
         uint256 amount;
-        bool isERC721;
     }
 
     RarityInfo[] public rarities;
@@ -203,6 +215,7 @@ contract GachaMachine is
         require(config.coordinator != address(0), "VRF not configured");
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
+        _setRoleAdmin(ECONOMIST_ROLE, ADMIN_ROLE);
         rescueDelay = DEFAULT_RESCUE_DELAY;
         vrfCoordinator = config.coordinator;
         if (config.subscriptionId == 0) {
@@ -303,11 +316,20 @@ contract GachaMachine is
         return this.onERC721Received.selector;
     }
 
-    function pause() external onlyRole(ADMIN_ROLE) {
+    modifier onlyEconomist() {
+        require(
+            hasRole(ECONOMIST_ROLE, msg.sender) ||
+                hasRole(ADMIN_ROLE, msg.sender),
+            "Not economist"
+        );
+        _;
+    }
+
+    function pause() external onlyEconomist {
         _pause();
     }
 
-    function unpause() external onlyRole(ADMIN_ROLE) {
+    function unpause() external onlyEconomist {
         _unpause();
     }
 
@@ -381,10 +403,9 @@ contract GachaMachine is
         RarityInfo storage rarity = rarities[rarityId];
         require(rarity.tokenContract != address(0), "Invalid rarity ID");
         require(rarity.enabled, "Rarity not enabled");
-        require(
-            prizes[rarityId].length > pendingDraws[rarityId],
-            "No prizes available"
-        );
+        uint256 bagLen = prizes[rarityId].length;
+        require(bagLen > pendingDraws[rarityId], "No prizes available");
+        require(bagLen <= type(uint64).max, "Bag too large");
 
         pendingDraws[rarityId]++;
         IGachaNFT(rarity.tokenContract).burn(msg.sender, CAPSULE_ID, 1);
@@ -409,7 +430,8 @@ contract GachaMachine is
             player: msg.sender,
             rarityId: rarityId,
             fulfilled: false,
-            requestedAt: uint64(block.timestamp)
+            requestedAt: uint64(block.timestamp),
+            bagLength: uint64(bagLen)
         });
 
         emit PlayRequested(requestId, msg.sender, rarityId);
@@ -522,7 +544,7 @@ contract GachaMachine is
     function setRarityPrice(
         uint256 rarityId,
         uint256 price
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyEconomist {
         require(rarityId < rarities.length, "Invalid rarity ID");
         require(
             rarities[rarityId].tokenContract != address(0),
@@ -536,7 +558,7 @@ contract GachaMachine is
     function setRarityEnabled(
         uint256 rarityId,
         bool enabled
-    ) external onlyRole(ADMIN_ROLE) {
+    ) external onlyEconomist {
         require(rarityId < rarities.length, "Invalid rarity ID");
         require(
             rarities[rarityId].tokenContract != address(0),
@@ -595,6 +617,8 @@ contract GachaMachine is
     /**
      * @dev Donate into `rarityId` and mint one capsule of that rarity.
      *      One call = one bag slot = one capsule, even if ERC1155 amount > 1.
+     *      Blocked while that bag has an in-flight VRF draw so a donation
+     *      cannot occupy a slot vacated by another fulfill.
      */
     function donateNFT(
         address tokenContract,
@@ -603,6 +627,7 @@ contract GachaMachine is
         uint256 rarityId
     ) external nonReentrant whenNotPaused {
         require(rarityId < rarities.length, "Invalid rarity ID");
+        require(pendingDraws[rarityId] == 0, "Draws pending");
         require(
             approvedForRarity[tokenContract][rarityId],
             "NFT not approved for rarity"
@@ -875,24 +900,27 @@ contract GachaMachine is
         }
 
         PrizeInfo[] storage bag = prizes[rarityId];
-        if (bag.length == 0 || randomWords.length == 0) {
+        uint256 bound = uint256(draw.bagLength);
+        if (bound > bag.length) {
+            bound = bag.length;
+        }
+        if (bound == 0 || randomWords.length == 0) {
             _queueCapsuleRefund(requestId, draw.player, rarityId);
             return;
         }
 
-        uint256 index = randomWords[0] % bag.length;
+        uint256 index = randomWords[0] % bound;
         PrizeInfo memory prize = bag[index];
         bag[index] = bag[bag.length - 1];
         bag.pop();
 
         _reserve(prize.tokenContract, prize.tokenId, prize.amount, prize.isERC721);
-        _claims[draw.player].push(
-            PrizeClaim({
-                tokenContract: prize.tokenContract,
-                tokenId: prize.tokenId,
-                amount: prize.amount,
-                isERC721: prize.isERC721
-            })
+        _pushClaim(
+            draw.player,
+            prize.tokenContract,
+            prize.tokenId,
+            prize.amount,
+            prize.isERC721
         );
 
         emit PrizeDrawn(
@@ -911,15 +939,26 @@ contract GachaMachine is
         address player,
         uint256 rarityId
     ) private {
+        _pushClaim(player, address(0), rarityId, 1, false);
+        emit CapsuleRefunded(requestId, player, rarityId);
+    }
+
+    function _pushClaim(
+        address player,
+        address tokenContract,
+        uint256 tokenId,
+        uint256 amount,
+        bool isERC721
+    ) private {
         _claims[player].push(
             PrizeClaim({
-                tokenContract: address(0),
-                tokenId: rarityId,
-                amount: 1,
-                isERC721: false
+                tokenContract: tokenContract,
+                isERC721: isERC721,
+                assignedAt: uint64(block.timestamp),
+                tokenId: tokenId,
+                amount: amount
             })
         );
-        emit CapsuleRefunded(requestId, player, rarityId);
     }
 
     function _reserve(

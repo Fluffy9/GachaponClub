@@ -103,9 +103,10 @@ export const MACHINE_ABI = [
                 type: 'tuple',
                 components: [
                     { name: 'tokenContract', type: 'address' },
+                    { name: 'isERC721', type: 'bool' },
+                    { name: 'assignedAt', type: 'uint64' },
                     { name: 'tokenId', type: 'uint256' },
                     { name: 'amount', type: 'uint256' },
-                    { name: 'isERC721', type: 'bool' },
                 ],
             },
         ],
@@ -119,10 +120,44 @@ export const MACHINE_ABI = [
     },
     {
         type: 'function',
+        name: 'pendingDraws',
+        stateMutability: 'view',
+        inputs: [{ name: 'rarityId', type: 'uint256' }],
+        outputs: [{ name: '', type: 'uint256' }],
+    },
+    {
+        type: 'function',
         name: 'ADMIN_ROLE',
         stateMutability: 'view',
         inputs: [],
         outputs: [{ name: '', type: 'bytes32' }],
+    },
+    {
+        type: 'function',
+        name: 'ECONOMIST_ROLE',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ name: '', type: 'bytes32' }],
+    },
+    {
+        type: 'function',
+        name: 'grantRole',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'role', type: 'bytes32' },
+            { name: 'account', type: 'address' },
+        ],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'revokeRole',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'role', type: 'bytes32' },
+            { name: 'account', type: 'address' },
+        ],
+        outputs: [],
     },
     {
         type: 'function',
@@ -517,6 +552,19 @@ export async function getEvmClaimCount(player: Address): Promise<number> {
     return Number(count);
 }
 
+export async function fetchPendingDraws(rarityId: bigint): Promise<bigint> {
+    try {
+        return await evmPublicClient.readContract({
+            address: EVM_MACHINE_ADDRESS,
+            abi: MACHINE_ABI,
+            functionName: 'pendingDraws',
+            args: [rarityId],
+        });
+    } catch {
+        return 0n;
+    }
+}
+
 export async function isCapsuleApproved(owner: Address, nft: Address): Promise<boolean> {
     const approved = await evmPublicClient.readContract({
         address: nft,
@@ -555,6 +603,28 @@ export async function isEvmAdmin(account: Address): Promise<boolean> {
         abi: MACHINE_ABI,
         functionName: 'hasRole',
         args: [role, account],
+    });
+}
+
+export async function isEvmEconomist(account: Address): Promise<boolean> {
+    const role = await evmPublicClient.readContract({
+        address: EVM_MACHINE_ADDRESS,
+        abi: MACHINE_ABI,
+        functionName: 'ECONOMIST_ROLE',
+    });
+    return evmPublicClient.readContract({
+        address: EVM_MACHINE_ADDRESS,
+        abi: MACHINE_ABI,
+        functionName: 'hasRole',
+        args: [role, account],
+    });
+}
+
+export async function fetchEconomistRole(): Promise<`0x${string}`> {
+    return evmPublicClient.readContract({
+        address: EVM_MACHINE_ADDRESS,
+        abi: MACHINE_ABI,
+        functionName: 'ECONOMIST_ROLE',
     });
 }
 

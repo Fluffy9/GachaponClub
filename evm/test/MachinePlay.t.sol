@@ -99,10 +99,11 @@ contract MachinePlayTest is Test {
         assertEq(machine.getPrizeCount(COMMON), 1);
         assertEq(machine.pendingDraws(COMMON), 1);
         assertEq(machine.getAvailablePrizeCount(COMMON), 0);
-        (address player, uint256 rarityId, bool fulfilled,) = machine.draws(requestId);
+        (address player, uint256 rarityId, bool fulfilled, , uint64 bagLength) = machine.draws(requestId);
         assertEq(player, user);
         assertEq(rarityId, COMMON);
         assertFalse(fulfilled);
+        assertEq(bagLength, 1);
     }
 
     function test_play_revertsWithoutPrize() public {
@@ -277,6 +278,60 @@ contract MachinePlayTest is Test {
         assertEq(machine.getPrizeCount(COMMON), n - 1);
     }
 
+    /// @dev Word 6 % 3 = 0 (first prize) but 6 % 4 = 2 (third prize). Donations
+    ///      are blocked while a draw is pending, so that inflation cannot land.
+    function test_donate_revertsWhileDrawPending() public {
+        _donate1155(TOKEN_ID, 1);
+        _donate1155(TOKEN_ID + 1, 1);
+        _donate1155(TOKEN_ID + 2, 1);
+        _buyAndApproveCapsule();
+        uint256 requestId = _play();
+
+        vm.prank(admin);
+        prize1155.mint(other, TOKEN_ID + 99, 1);
+        vm.startPrank(other);
+        prize1155.setApprovalForAll(address(machine), true);
+        vm.expectRevert("Draws pending");
+        machine.donateNFT(address(prize1155), TOKEN_ID + 99, 1, COMMON);
+        vm.stopPrank();
+
+        assertEq(machine.getPrizeCount(COMMON), 3);
+
+        vrf.fulfill(requestId, 0);
+        vm.startPrank(other);
+        machine.donateNFT(address(prize1155), TOKEN_ID + 99, 1, COMMON);
+        vm.stopPrank();
+        assertEq(machine.getPrizeCount(COMMON), 3);
+    }
+
+    function test_fulfill_usesCurrentLengthIfBagShrunk() public {
+        _donate1155(TOKEN_ID, 1);
+        _donate1155(TOKEN_ID + 1, 1);
+        _donate1155(TOKEN_ID + 2, 1);
+
+        _buyAndApproveCapsule();
+        uint256 first = _play();
+
+        vm.deal(other, 1 ether);
+        vm.startPrank(other);
+        machine.purchase{value: PRICE}(COMMON);
+        capsule.setApprovalForAll(address(machine), true);
+        uint256 second = machine.play(COMMON);
+        vm.stopPrank();
+
+        (, , , , uint64 secondSnap) = machine.draws(second);
+        assertEq(secondSnap, 3);
+
+        vrf.fulfill(first, 0);
+        // Snapshot is 3 and word 2 would be OOB on the length-2 bag if we
+        // modulo'd the snapshot without capping to the current length.
+        vrf.fulfill(second, 2);
+
+        assertEq(machine.getClaim(user, 0).tokenId, TOKEN_ID);
+        assertEq(machine.getClaim(other, 0).tokenId, TOKEN_ID + 2);
+        assertEq(machine.getPrizeCount(COMMON), 1);
+    }
+
     function test_fulfill_erc721Prize() public {
         vm.prank(admin);
         uint256 tokenId = prize721.mint(user);
@@ -391,5 +446,20 @@ contract MachinePlayTest is Test {
         vm.prank(admin);
         vm.expectRevert("Prize reserved");
         machine.withdrawPrize(COMMON, 0, address(prize1155), TOKEN_ID, admin);
+    }
+
+    function test_claim_recordsAssignedAt() public {
+        _donate1155(TOKEN_ID, 1);
+        _buyAndApproveCapsule();
+        uint256 requestId = _play();
+        vrf.fulfill(requestId, 0);
+
+        GachaMachine.PrizeClaim memory queued = machine.getClaim(user, 0);
+        assertEq(queued.assignedAt, uint64(block.timestamp));
+        assertEq(queued.tokenId, TOKEN_ID);
+
+        vm.prank(user);
+        machine.claim(0);
+        assertEq(prize1155.balanceOf(user, TOKEN_ID), 1);
     }
 }

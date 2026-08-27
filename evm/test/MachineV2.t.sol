@@ -71,6 +71,25 @@ contract MachineV2Test is Test {
         assertEq(machine.getPrizeInfo(RARE, 0).tokenContract, address(prize));
     }
 
+    function test_donate_otherBagOkWhileDrawPending() public {
+        vm.prank(admin);
+        prize.mint(user, TOKEN_ID, 1);
+        vm.prank(admin);
+        prize.mint(user, TOKEN_ID + 1, 1);
+
+        vm.startPrank(user);
+        prize.setApprovalForAll(address(machine), true);
+        machine.donateNFT(address(prize), TOKEN_ID, 1, COMMON);
+        commonCap.setApprovalForAll(address(machine), true);
+        machine.play(COMMON);
+        machine.donateNFT(address(prize), TOKEN_ID + 1, 1, RARE);
+        vm.stopPrank();
+
+        assertEq(machine.pendingDraws(COMMON), 1);
+        assertEq(machine.getPrizeCount(RARE), 1);
+        assertEq(rareCap.balanceOf(user, 0), 1);
+    }
+
     function test_pause_blocksPurchasePlayDonate_claimStillWorks() public {
         vm.prank(admin);
         prize.mint(user, TOKEN_ID, 1);
@@ -309,5 +328,119 @@ contract MachineV2Test is Test {
         owned.registerRarity(address(commonCap), "Common", PRICE);
         owned.approveNFT(COMMON, address(prize), true);
         vm.stopPrank();
+    }
+}
+
+contract MachineEconomistTest is Test {
+    GachaMachine public machine;
+    VRFCoordinatorV2PlusMock public vrf;
+    GachaNFT public commonCap;
+    MockPrizeNFT public prize;
+
+    address public owner = makeAddr("owner");
+    address public admin = makeAddr("admin");
+    address public user = makeAddr("user");
+    address public economist = makeAddr("economist");
+
+    uint256 public constant COMMON = 0;
+    uint256 public constant PRICE = 0.01 ether;
+    uint256 public constant TOKEN_ID = 7;
+
+    function setUp() public {
+        vm.startPrank(owner);
+        vrf = new VRFCoordinatorV2PlusMock();
+        machine = new GachaMachine(MachineHarness.vrfConfig(address(vrf)));
+        commonCap = new GachaNFT();
+        prize = new MockPrizeNFT();
+
+        machine.grantRole(machine.ADMIN_ROLE(), admin);
+        commonCap.grantRole(commonCap.MINTER_ROLE(), address(machine));
+        prize.grantRole(prize.MINTER_ROLE(), admin);
+        vm.stopPrank();
+
+        vm.startPrank(admin);
+        machine.registerRarity(address(commonCap), "Common", PRICE);
+        machine.approveNFT(COMMON, address(prize), true);
+        machine.grantRole(machine.ECONOMIST_ROLE(), economist);
+        vm.stopPrank();
+    }
+
+    function test_economistRole_isAdministeredByAdmin() public view {
+        assertEq(machine.getRoleAdmin(machine.ECONOMIST_ROLE()), machine.ADMIN_ROLE());
+        assertTrue(machine.hasRole(machine.ECONOMIST_ROLE(), economist));
+        assertFalse(machine.hasRole(machine.ADMIN_ROLE(), economist));
+    }
+
+    function test_economist_canSetPriceEnableAndPause() public {
+        vm.startPrank(economist);
+        machine.setRarityPrice(COMMON, 0.02 ether);
+        machine.setRarityEnabled(COMMON, false);
+        machine.pause();
+        machine.unpause();
+        vm.stopPrank();
+
+        assertEq(machine.getRarityInfo(COMMON).price, 0.02 ether);
+        assertFalse(machine.getRarityInfo(COMMON).enabled);
+
+        vm.prank(admin);
+        machine.setRarityEnabled(COMMON, true);
+        assertTrue(machine.getRarityInfo(COMMON).enabled);
+    }
+
+    function test_stranger_cannotUseEconomistLevers() public {
+        vm.startPrank(user);
+        vm.expectRevert("Not economist");
+        machine.setRarityPrice(COMMON, 0.02 ether);
+        vm.expectRevert("Not economist");
+        machine.setRarityEnabled(COMMON, false);
+        vm.expectRevert("Not economist");
+        machine.pause();
+        vm.stopPrank();
+
+        vm.prank(admin);
+        machine.pause();
+        vm.prank(user);
+        vm.expectRevert("Not economist");
+        machine.unpause();
+    }
+
+    function test_economist_cannotWithdrawOrApprove() public {
+        vm.prank(admin);
+        prize.mint(user, TOKEN_ID, 1);
+        vm.startPrank(user);
+        prize.setApprovalForAll(address(machine), true);
+        machine.donateNFT(address(prize), TOKEN_ID, 1, COMMON);
+        vm.stopPrank();
+
+        vm.deal(user, 1 ether);
+        vm.prank(user);
+        machine.purchase{value: PRICE}(COMMON);
+
+        vm.startPrank(economist);
+        vm.expectRevert();
+        machine.withdraw(address(0), PRICE, economist);
+        vm.expectRevert();
+        machine.redeemPrize(COMMON, economist);
+        vm.expectRevert();
+        machine.withdrawPrize(COMMON, 0, address(prize), TOKEN_ID, economist);
+        vm.expectRevert();
+        machine.approveNFT(COMMON, address(prize), false);
+        vm.expectRevert();
+        machine.registerRarity(address(prize), "Extra", PRICE);
+        vm.expectRevert();
+        machine.setRescueDelay(2 days);
+        vm.stopPrank();
+
+        assertEq(address(machine).balance, PRICE);
+        assertEq(machine.getPrizeCount(COMMON), 1);
+        assertTrue(machine.isApprovedForRarity(address(prize), COMMON));
+    }
+
+    function test_economist_cannotGrantEconomist() public {
+        bytes32 role = machine.ECONOMIST_ROLE();
+        vm.prank(economist);
+        vm.expectRevert();
+        machine.grantRole(role, user);
+        assertFalse(machine.hasRole(role, user));
     }
 }

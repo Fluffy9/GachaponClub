@@ -6,7 +6,7 @@ import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl, EVM_M
 import { Transaction } from '@mysten/sui/transactions';
 import { toast } from 'sonner';
 import { formatAddress } from '../lib/utils';
-import { getEvmClaimCount, isCapsuleApproved } from '../lib/evm';
+import { getEvmClaimCount, isCapsuleApproved, fetchPendingDraws } from '../lib/evm';
 import { isAddress, type Address } from 'viem';
 
 interface Capsule extends NFT {
@@ -226,6 +226,11 @@ export function Inventory() {
             const tokenId = BigInt(donateTokenId);
             const amount = donateStandard === 'erc721' ? 1n : BigInt(donateAmount || '1');
             if (amount < 1n) throw new Error('Amount must be at least 1');
+
+            const pending = await fetchPendingDraws(BigInt(rarityId));
+            if (pending > 0n) {
+                throw new Error('This bag has a draw in flight. Wait a moment, or buy a capsule instead.');
+            }
 
             setIsDonating(donateContract);
             setDonationError(null);

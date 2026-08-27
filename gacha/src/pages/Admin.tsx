@@ -23,6 +23,8 @@ import {
     fetchEvmMachineStats,
     fetchEvmApprovedNfts,
     isEvmAdmin,
+    isEvmEconomist,
+    fetchEconomistRole,
     type EvmRarity,
     type EvmMachineStats,
     type EvmApprovedNft,
@@ -75,12 +77,14 @@ export default function Admin() {
     const [rarities, setRarities] = useState<EvmRarity[]>([]);
     const [approvedNfts, setApprovedNfts] = useState<EvmApprovedNft[]>([]);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [isEconomist, setIsEconomist] = useState(false);
     const [newNFTType, setNewNFTType] = useState("");
     const [newNFTTier, setNewNFTTier] = useState<PrizeType>("common");
     const [activeTab, setActiveTab] = useState<'nfts' | 'withdraw' | 'settings'>('nfts');
     const [prices, setPrices] = useState({ common: 0.01, rare: 0.05, epic: 0.1 });
     const [vrfFund, setVrfFund] = useState("0.005");
     const [newAdmin, setNewAdmin] = useState("");
+    const [economistAddress, setEconomistAddress] = useState("");
     const [redeemRarity, setRedeemRarity] = useState<PrizeType>("common");
 
     useEffect(() => {
@@ -116,19 +120,26 @@ export default function Admin() {
     }, [refresh]);
 
     useEffect(() => {
-        const checkAdmin = async () => {
+        const checkRoles = async () => {
             if (!address || walletType === 'sui') {
                 setIsAdmin(false);
+                setIsEconomist(false);
                 return;
             }
             try {
-                setIsAdmin(await isEvmAdmin(address as Address));
+                const [admin, economist] = await Promise.all([
+                    isEvmAdmin(address as Address),
+                    isEvmEconomist(address as Address).catch(() => false),
+                ]);
+                setIsAdmin(admin);
+                setIsEconomist(economist);
             } catch (err) {
-                console.error('Failed to check admin role:', err);
+                console.error('Failed to check machine roles:', err);
                 setIsAdmin(false);
+                setIsEconomist(false);
             }
         };
-        checkAdmin();
+        checkRoles();
     }, [address, walletType]);
 
     const requireAdmin = () => {
@@ -141,12 +152,22 @@ export default function Admin() {
         }
     };
 
-    const runAdmin = async (label: string, work: () => Promise<void>) => {
+    const requireEconomist = () => {
+        if (!isConnected || walletType === 'sui') {
+            openPopup(<WalletPopup />, "Your Wallet");
+            throw new Error('Connect an Ethereum wallet on Base');
+        }
+        if (!isAdmin && !isEconomist) {
+            throw new Error('Connected wallet is not an economist or admin');
+        }
+    };
+
+    const runWithRole = async (guard: () => void, label: string, work: () => Promise<void>) => {
         try {
             setIsLoading(true);
             setError(null);
             setSuccess(null);
-            requireAdmin();
+            guard();
             await work();
             setSuccess(label);
             toast.success(label);
@@ -158,6 +179,14 @@ export default function Admin() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const runAdmin = async (label: string, work: () => Promise<void>) => {
+        await runWithRole(requireAdmin, label, work);
+    };
+
+    const runEconomist = async (label: string, work: () => Promise<void>) => {
+        await runWithRole(requireEconomist, label, work);
     };
 
     const handleNFTApproval = async (nftType: string, tier: PrizeType, isApproved: boolean) => {
@@ -201,7 +230,7 @@ export default function Admin() {
     };
 
     const handleUpdatePrices = async () => {
-        await runAdmin('Prices updated', async () => {
+        await runEconomist('Prices updated', async () => {
             const updates: Array<[PrizeType, number]> = [
                 ['common', prices.common],
                 ['rare', prices.rare],
@@ -220,7 +249,7 @@ export default function Admin() {
     };
 
     const handleToggleRarity = async (rarity: EvmRarity) => {
-        await runAdmin(`${rarity.name} ${rarity.enabled ? 'disabled' : 'enabled'}`, async () => {
+        await runEconomist(`${rarity.name} ${rarity.enabled ? 'disabled' : 'enabled'}`, async () => {
             await callContract({
                 chain: 'eth',
                 contractAddress: EVM_MACHINE_ADDRESS,
@@ -318,7 +347,7 @@ export default function Admin() {
     };
 
     const handlePause = async (paused: boolean) => {
-        await runAdmin(paused ? 'Machine paused' : 'Machine unpaused', async () => {
+        await runEconomist(paused ? 'Machine paused' : 'Machine unpaused', async () => {
             await callContract({
                 chain: 'eth',
                 contractAddress: EVM_MACHINE_ADDRESS,
@@ -328,7 +357,23 @@ export default function Admin() {
         });
     };
 
-    const writesEnabled = Boolean(isConnected && walletType !== 'sui' && isAdmin && !isLoading);
+    const handleEconomistRole = async (grant: boolean) => {
+        await runAdmin(grant ? 'Economist granted' : 'Economist revoked', async () => {
+            if (!isAddress(economistAddress)) throw new Error('Enter a valid address');
+            const role = await fetchEconomistRole();
+            await callContract({
+                chain: 'eth',
+                contractAddress: EVM_MACHINE_ADDRESS,
+                method: grant ? 'grantRole' : 'revokeRole',
+                args: [role, economistAddress as Address],
+            });
+            setEconomistAddress("");
+        });
+    };
+
+    const connected = Boolean(isConnected && walletType !== 'sui');
+    const adminWrites = Boolean(connected && isAdmin && !isLoading);
+    const economistWrites = Boolean(connected && (isAdmin || isEconomist) && !isLoading);
     const explorer = (path: string) => `${BASE_EXPLORER_URL}${path}`;
 
     const renderApprovedNFTs = () => (
@@ -403,9 +448,14 @@ export default function Admin() {
                             This admin dashboard controls the Base machine. Disconnect Sui and connect Ethereum to make changes.
                         </div>
                     )}
-                    {isConnected && walletType !== 'sui' && !isAdmin && (
+                    {isConnected && walletType !== 'sui' && !isAdmin && !isEconomist && (
                         <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
-                            Connected wallet is not a machine admin. Stats still load; writes stay disabled.
+                            Connected wallet is not a machine admin or economist. Stats still load; writes stay disabled.
+                        </div>
+                    )}
+                    {isConnected && walletType !== 'sui' && isEconomist && !isAdmin && (
+                        <div className="p-4 bg-[#b480e4]/10 dark:bg-[#b480e4]/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+                            Economist wallet: you can set prices, enable or disable rarities, and pause. Withdraw, collection approval, and VRF stay with admin.
                         </div>
                     )}
                     {!isConnected && (
@@ -531,7 +581,7 @@ export default function Admin() {
                                         <div className="flex items-end">
                                             <button
                                                 onClick={() => handleNFTApproval(newNFTType, newNFTTier, true)}
-                                                disabled={!writesEnabled || !newNFTType}
+                                                disabled={!adminWrites || !newNFTType}
                                                 className="w-full px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {isLoading ? 'Approving...' : 'Approve NFT'}
@@ -549,7 +599,7 @@ export default function Admin() {
                                                 </div>
                                                 <button
                                                     onClick={() => handleNFTApproval(nft.address, nft.tier, false)}
-                                                    disabled={!writesEnabled}
+                                                    disabled={!adminWrites}
                                                     className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                     Unapprove
@@ -575,7 +625,7 @@ export default function Admin() {
                                             </div>
                                             <button
                                                 onClick={handleWithdraw}
-                                                disabled={!writesEnabled || machineStats.treasuryBalance === 0n}
+                                                disabled={!adminWrites || machineStats.treasuryBalance === 0n}
                                                 className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <ArrowUpRight className="w-4 h-4" />
@@ -601,7 +651,7 @@ export default function Admin() {
                                         </div>
                                         <button
                                             onClick={handleRedeemPrize}
-                                            disabled={!writesEnabled}
+                                            disabled={!adminWrites}
                                             className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Redeem to my wallet
@@ -614,7 +664,7 @@ export default function Admin() {
                         {activeTab === 'settings' && (
                             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 md:p-6">
                                 <div className="mb-6">
-                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Machine Settings (Admin Only)</h2>
+                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Machine Settings</h2>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {(['common', 'rare', 'epic'] as PrizeType[]).map((tier) => (
                                             <div key={tier} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -640,7 +690,7 @@ export default function Admin() {
                                     <div className="mt-4">
                                         <button
                                             onClick={handleUpdatePrices}
-                                            disabled={!writesEnabled}
+                                            disabled={!economistWrites}
                                             className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {isLoading ? 'Updating...' : 'Update Prices'}
@@ -659,7 +709,7 @@ export default function Admin() {
                                                 </div>
                                                 <button
                                                     onClick={() => handleToggleRarity(rarity)}
-                                                    disabled={!writesEnabled}
+                                                    disabled={!economistWrites}
                                                     className={`px-3 py-1.5 rounded-lg text-sm text-white disabled:opacity-50 ${rarity.enabled ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}
                                                 >
                                                     {rarity.enabled ? 'Disable' : 'Enable'}
@@ -685,21 +735,21 @@ export default function Admin() {
                                         </div>
                                         <button
                                             onClick={handleFundVrf}
-                                            disabled={!writesEnabled}
+                                            disabled={!adminWrites}
                                             className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Fund subscription
                                         </button>
                                         <button
                                             onClick={handleCancelVrf}
-                                            disabled={!writesEnabled}
+                                            disabled={!adminWrites}
                                             className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Cancel subscription
                                         </button>
                                         <button
                                             onClick={handleCreateVrf}
-                                            disabled={!writesEnabled}
+                                            disabled={!adminWrites}
                                             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Create subscription
@@ -715,20 +765,53 @@ export default function Admin() {
                                     <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex gap-3">
                                         <button
                                             onClick={() => handlePause(true)}
-                                            disabled={!writesEnabled}
+                                            disabled={!economistWrites}
                                             className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50"
                                         >
                                             Pause buy / play / donate
                                         </button>
                                         <button
                                             onClick={() => handlePause(false)}
-                                            disabled={!writesEnabled}
+                                            disabled={!economistWrites}
                                             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
                                         >
                                             Unpause
                                         </button>
                                     </div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Claim and stuck-draw rescue stay available while paused.</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Claim and stuck-draw rescue stay available while paused. Economist and admin can both pause.</p>
+                                </div>
+
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Economist role</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg flex flex-col sm:flex-row gap-4 items-end">
+                                        <div className="flex-1 w-full">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bot or operator address</label>
+                                            <input
+                                                type="text"
+                                                value={economistAddress}
+                                                onChange={(e) => setEconomistAddress(e.target.value)}
+                                                placeholder="0x…"
+                                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => handleEconomistRole(true)}
+                                            disabled={!adminWrites || !economistAddress}
+                                            className="px-4 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Grant
+                                        </button>
+                                        <button
+                                            onClick={() => handleEconomistRole(false)}
+                                            disabled={!adminWrites || !economistAddress}
+                                            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Revoke
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Economists can reprice, toggle rarities, and pause. They cannot withdraw ETH, pull prizes, or approve collections.
+                                    </p>
                                 </div>
 
                                 <div className="mb-6">
@@ -746,7 +829,7 @@ export default function Admin() {
                                         </div>
                                         <button
                                             onClick={handleChangeAdmin}
-                                            disabled={!writesEnabled || !newAdmin}
+                                            disabled={!adminWrites || !newAdmin}
                                             className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             Transfer ADMIN_ROLE

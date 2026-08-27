@@ -255,15 +255,29 @@ PRIVATE_KEY="$PK" VRF_FUND_WEI="$VRF_FUND_WEI" \
 echo
 echo "Sweeping leftover ETH to $RETURN_TO ..."
 bal="$(cast balance "$DEPLOYER" --rpc-url "$RPC")"
-if [[ "$bal" -le "$SWEEP_RESERVE_WEI" ]]; then
+gas_price="$(cast gas-price --rpc-url "$RPC")"
+sweep_wei="$(python3 - "$bal" "$gas_price" "$SWEEP_RESERVE_WEI" <<'PY'
+import sys
+bal = int(sys.argv[1])
+gas_price = int(sys.argv[2])
+floor = int(sys.argv[3])
+reserve = max(floor, 21000 * gas_price * 20)
+sweep = bal - reserve
+if sweep <= 0:
+    print(0)
+else:
+    print(sweep)
+PY
+)"
+if [[ "$sweep_wei" == "0" ]]; then
   echo "Only $(wei_to_eth "$bal") ETH left (dust). Not sweeping."
   exit 0
 fi
 
-sweep_wei="$((bal - SWEEP_RESERVE_WEI))"
 cast send "$RETURN_TO" \
   --rpc-url "$RPC" \
   --private-key "$PK" \
+  --gas-limit 21000 \
   --value "$sweep_wei"
 
 echo "Sent $(wei_to_eth "$sweep_wei") ETH back to $RETURN_TO"
