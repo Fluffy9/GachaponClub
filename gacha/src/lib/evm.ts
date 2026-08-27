@@ -420,10 +420,16 @@ const TIER_BY_ID: PrizeType[] = ['common', 'rare', 'epic'];
 export function formatEth(wei: bigint, digits = 4): string {
     const value = Number(formatEther(wei));
     if (!Number.isFinite(value)) return `${formatEther(wei)} ETH`;
-    return `${value.toLocaleString(undefined, {
+    return `${formatEthAmount(wei, digits)} ETH`;
+}
+
+export function formatEthAmount(wei: bigint, digits = 4): string {
+    const value = Number(formatEther(wei));
+    if (!Number.isFinite(value)) return formatEther(wei);
+    return value.toLocaleString(undefined, {
         minimumFractionDigits: 0,
         maximumFractionDigits: digits,
-    })} ETH`;
+    });
 }
 
 export async function fetchEvmRarities(): Promise<EvmRarity[]> {

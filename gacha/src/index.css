@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Press+Start+2P&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -54,6 +54,15 @@
   --ring: 262 70% 70%;
 }
 
+/* Pixel art sparkle sprites (SMIL) */
+.pixel-sparkle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
 /* Pixel art icon styles */
 .pixel-icon {
   image-rendering: pixelated;
@@ -93,6 +102,75 @@ button {
 body {
   font-family: "Courier New", monospace;
   line-height: 1.5;
+}
+
+/* Kenney Cursor Pixel Pack (CC0) — hand variants */
+:root {
+  --cursor-hand: url("/cursors/hand.png?v=3") 18 6, auto;
+  --cursor-pointer: url("/cursors/hand-pointer.png?v=3") 10 4, pointer;
+  --cursor-click: url("/cursors/hand-click.png?v=3") 18 10, pointer;
+  --cursor-closed: url("/cursors/hand-closed.png?v=3") 18 12, grabbing;
+  --cursor-wait: url("/cursors/wait.png?v=3") 18 18, wait;
+  --cursor-not-allowed: url("/cursors/not-allowed.png?v=3") 18 18, not-allowed;
+}
+
+.dark {
+  --cursor-hand: url("/cursors/hand-dark.png?v=3") 18 6, auto;
+  --cursor-pointer: url("/cursors/hand-pointer-dark.png?v=3") 10 4, pointer;
+  --cursor-click: url("/cursors/hand-click-dark.png?v=3") 18 10, pointer;
+  --cursor-closed: url("/cursors/hand-closed-dark.png?v=3") 18 12, grabbing;
+  --cursor-wait: url("/cursors/wait-dark.png?v=3") 18 18, wait;
+  --cursor-not-allowed: url("/cursors/not-allowed-dark.png?v=3") 18 18, not-allowed;
+}
+
+html,
+body {
+  cursor: var(--cursor-hand);
+}
+
+a,
+a *,
+button,
+button *,
+[role="button"],
+[role="button"] *,
+[role="tab"],
+[role="tab"] *,
+summary,
+label[for],
+select,
+input[type="button"],
+input[type="submit"],
+input[type="checkbox"],
+input[type="radio"],
+.cursor-pointer,
+.cursor-pointer * {
+  cursor: var(--cursor-pointer);
+}
+
+a:active,
+a:active *,
+button:active:not(:disabled),
+button:active:not(:disabled) *,
+[role="button"]:active,
+[role="button"]:active *,
+.cursor-pointer:active,
+.cursor-pointer:active * {
+  cursor: var(--cursor-click);
+}
+
+:disabled,
+:disabled *,
+[aria-disabled="true"],
+[aria-disabled="true"] *,
+.cursor-not-allowed,
+.cursor-not-allowed * {
+  cursor: var(--cursor-not-allowed);
+}
+
+.cursor-wait,
+.cursor-wait * {
+  cursor: var(--cursor-wait);
 }
 
 /* Reset font family for all elements */
@@ -143,6 +221,41 @@ h6 {
   margin-bottom: 0.625rem;
 }
 
+/* Capsule-label FAQ (overrides heading + courier globals) */
+.faq-panel-title {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: #111;
+}
+
+.faq-panel-body,
+.faq-panel-body p,
+.faq-panel-body span,
+.faq-panel-body button,
+.faq-panel-body a {
+  font-family: Arial, Helvetica, sans-serif !important;
+  line-height: 1.55;
+}
+
+.faq-panel-body button {
+  padding: 0.5rem 0.25rem;
+  border-radius: 0;
+  font-weight: 700;
+}
+
+.label-stickers,
+.label-stickers p,
+.label-stickers span,
+.label-stickers div,
+.label-stickers a {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
 /* Paragraph and text styles */
 p,
 span,
@@ -168,6 +281,23 @@ a {
   font-family: "Press Start 2P", "Courier New", monospace;
   image-rendering: pixelated;
   letter-spacing: 0.05em;
+}
+
+.winner-banner {
+  color: #b480e4;
+  overflow: visible;
+}
+
+.dark .winner-banner {
+  color: #c99df0;
+}
+
+.winner-banner text {
+  font-family: "Caveat", cursive !important;
+  font-size: 54px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: none;
 }
 
 .bg-pattern {
@@ -200,30 +330,81 @@ a {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Badge style for price tag */
-.badge {
-  color: black;
-  text-align: center;
-  padding: 0.5em 1em;
-  min-width: 80px;
-  font-size: 0.875rem;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  transition: all 0.2s ease;
-  image-rendering: pixelated;
+.price-sticker,
+.price-sticker span {
+  font-family: Arial, Helvetica, sans-serif !important;
+  line-height: 1.1;
 }
 
-.badge:hover {
-  transform: scale(1.1) translateY(-2px);
+.price-sticker--common {
+  --sticker-fill: #9fe8ff;
+  --sticker-ink: #14627a;
+  --sticker-body: #ffffff;
+  --sticker-hint: #7aa8b4;
+  --sticker-ring: #ffffff;
 }
 
-.badge-text {
-  font-weight: bold;
+.price-sticker--rare {
+  --sticker-fill: #fab5e2;
+  --sticker-ink: #8a3a6e;
+  --sticker-body: #ffffff;
+  --sticker-hint: #c48ab0;
+  --sticker-ring: #ffffff;
 }
 
-.dark .badge {
-  color: white;
+.price-sticker--epic {
+  --sticker-fill: #ffd93b;
+  --sticker-ink: #7a5b00;
+  --sticker-body: #ffffff;
+  --sticker-hint: #b89a3a;
+  --sticker-ring: #ffffff;
+}
+
+.dark .price-sticker--common {
+  --sticker-fill: #5fb8cc;
+  --sticker-ink: #e7f8ff;
+  --sticker-body: #1f2937;
+  --sticker-hint: #9fe8ff99;
+  --sticker-ring: #5fb8cc;
+}
+
+.dark .price-sticker--rare {
+  --sticker-fill: #d87eb6;
+  --sticker-ink: #ffe9f7;
+  --sticker-body: #1f2937;
+  --sticker-hint: #fab5e299;
+  --sticker-ring: #d87eb6;
+}
+
+.dark .price-sticker--epic {
+  --sticker-fill: #e0b441;
+  --sticker-ink: #fff6d4;
+  --sticker-body: #1f2937;
+  --sticker-hint: #ffd93b99;
+  --sticker-ring: #e0b441;
+}
+
+.price-sticker {
+  background: var(--sticker-body);
+  color: var(--sticker-ink);
+  box-shadow: 0 0 0 3px var(--sticker-ring), 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+
+.dark .price-sticker {
+  box-shadow: 0 0 0 3px var(--sticker-ring), 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.price-sticker-header {
+  background: var(--sticker-fill);
+  color: var(--sticker-ink);
+}
+
+.dark .price-sticker-header {
+  color: var(--sticker-ink);
+}
+
+.price-sticker-hint {
+  color: var(--sticker-hint);
 }
 
 /* Pixel art question mark */

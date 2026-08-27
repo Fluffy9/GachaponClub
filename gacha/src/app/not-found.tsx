@@ -24,7 +24,7 @@ export default function NotFound() {
         <main className="min-h-screen flex flex-col items-center bg-pattern">
             <div className="w-full max-w-6xl px-4 py-6">
                 {/* Header with Theme Toggle */}
-                <div className="flex flex-col items-center mb-8 relative">
+                <div className="flex flex-col items-center mb-8 relative pt-10 md:pt-14">
                     <motion.div
                         variants={item}
                         initial="hidden"

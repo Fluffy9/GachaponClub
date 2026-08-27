@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { motion } from "framer-motion"
 import { usePopup } from "./ui/popup-provider"
-import { motion, AnimatePresence } from "framer-motion"
+import { PixelSparkle, SPARKLE_CYCLE_S, type SparkleVariant } from "./pixel-sparkle"
 
 interface GachaCapsuleProps {
   type: "common" | "rare" | "epic"
@@ -28,19 +29,11 @@ interface GachaCapsuleProps {
   renderPopupContent?: (item: any) => React.ReactNode
 }
 
-interface PatternElement {
-  type: 'rect';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+const SPARKLE_VARIANTS: SparkleVariant[] = ["a", "c", "b"]
 
-interface Pattern {
-  viewBox: string;
-  path?: string;
-  elements?: PatternElement[];
-  isPath: boolean;
+function unit(seed: number) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453
+  return x - Math.floor(x)
 }
 
 export function GachaCapsule({
@@ -197,83 +190,20 @@ export function GachaCapsule({
     }
   }
 
-  const getRandomShines = (type: string) => {
-    const count = type === "epic" ? 5 : 2;
-    const shines = [];
-
-    // Collection of different SVG patterns
-    const patterns: Pattern[] = [
-      // Original curved pattern
-      {
-        viewBox: "0 0 24 24",
-        path: "M12 3 Q13 9 19 12 Q13 15 12 21 Q11 15 5 12 Q11 9 12 3 Z",
-        isPath: true
-      },
-      // Small plus pattern
-      {
-        viewBox: "0 0 5 5",
-        elements: [
-          { type: 'rect', x: 2, y: 0, width: 1, height: 1 },
-          { type: 'rect', x: 2, y: 2, width: 1, height: 1 },
-          { type: 'rect', x: 2, y: 4, width: 1, height: 1 },
-          { type: 'rect', x: 0, y: 2, width: 1, height: 1 },
-          { type: 'rect', x: 4, y: 2, width: 1, height: 1 }
-        ],
-        isPath: false
-      },
-      // Large plus pattern with corners
-      {
-        viewBox: "0 0 7 7",
-        elements: [
-          { type: 'rect', x: 3, y: 0, width: 1, height: 1 },
-          { type: 'rect', x: 3, y: 3, width: 1, height: 1 },
-          { type: 'rect', x: 3, y: 6, width: 1, height: 1 },
-          { type: 'rect', x: 0, y: 3, width: 1, height: 1 },
-          { type: 'rect', x: 6, y: 3, width: 1, height: 1 },
-          { type: 'rect', x: 2, y: 2, width: 1, height: 1 },
-          { type: 'rect', x: 4, y: 2, width: 1, height: 1 },
-          { type: 'rect', x: 2, y: 4, width: 1, height: 1 },
-          { type: 'rect', x: 4, y: 4, width: 1, height: 1 }
-        ],
-        isPath: false
+  const sparkles = useMemo(() => {
+    if (type === "common") return []
+    const count = type === "epic" ? 5 : 2
+    return Array.from({ length: count }, (_, i) => {
+      const seed = index * 17 + i * 31 + (type === "epic" ? 7 : 3)
+      return {
+        variant: SPARKLE_VARIANTS[i % SPARKLE_VARIANTS.length],
+        top: `${8 + unit(seed) * 84}%`,
+        left: `${8 + unit(seed + 1) * 84}%`,
+        size: `${(18 + unit(seed + 2) * 14) * 3}%`,
+        delay: (i * SPARKLE_CYCLE_S) / count + unit(seed + 3) * 0.8,
       }
-    ];
-
-    for (let i = 0; i < count; i++) {
-      // Random position between 5% and 95%
-      const top = 5 + Math.random() * 90;
-      const left = 5 + Math.random() * 90;
-
-      // Random size between 15% and 25%
-      const size = 15 + Math.random() * 10;
-
-      // Random opacity between 0.5 and 0.9 for light mode, 0.3 and 0.7 for dark mode
-      const opacity = {
-        light: 0.5 + Math.random() * 0.4,
-        dark: 0.3 + Math.random() * 0.4
-      };
-
-      // Random animation delay
-      const delay = Math.random() * 2;
-
-      // Random pattern
-      const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-
-      shines.push({
-        position: {
-          top: `${top}%`,
-          left: `${left}%`,
-          transform: 'translate(-50%, -50%)'
-        },
-        size: `${size}%`,
-        opacity,
-        delay,
-        pattern
-      });
-    }
-
-    return shines;
-  };
+    })
+  }, [type, index])
 
   return (
     <motion.div
@@ -289,91 +219,24 @@ export function GachaCapsule({
         willChange: "transform"
       }}
     >
-      {/* Shine effects */}
-      {type !== "common" && (
-        <>
-          {getRandomShines(type).map((shine, i) => (
-            <motion.svg
-              key={i}
-              width="24"
-              height="24"
-              viewBox={shine.pattern.viewBox}
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="absolute"
-              style={{
-                width: shine.size,
-                height: shine.size,
-                ...shine.position,
-                zIndex: 20
-              }}
-            >
-              {shine.pattern.isPath ? (
-                <motion.path
-                  d={shine.pattern.path}
-                  fill="none"
-                  stroke={type === "epic" ? "#b480e4" : type === "rare" ? "#fab5e2" : "#9fe8ff"}
-                  strokeWidth="1.5"
-                  opacity={shine.opacity.light}
-                  className="dark:stroke-gray-300 dark:opacity-[var(--dark-opacity)]"
-                  style={{
-                    '--dark-opacity': shine.opacity.dark
-                  } as React.CSSProperties}
-                  animate={{
-                    y: [0, -5, 0],
-                    scale: [1, 1.1, 1],
-                    opacity: [
-                      shine.opacity.light,
-                      shine.opacity.light + 0.2,
-                      shine.opacity.light
-                    ],
-                    transition: {
-                      duration: 2 + Math.random(),
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: shine.delay
-                    }
-                  }}
-                />
-              ) : (
-                <motion.g
-                  fill={type === "epic" ? "#b480e4" : type === "rare" ? "#fab5e2" : "#9fe8ff"}
-                  opacity={shine.opacity.light}
-                  className="dark:fill-gray-300 dark:opacity-[var(--dark-opacity)]"
-                  style={{
-                    '--dark-opacity': shine.opacity.dark
-                  } as React.CSSProperties}
-                  animate={{
-                    y: [0, -5, 0],
-                    scale: [1, 1.1, 1],
-                    opacity: [
-                      shine.opacity.light,
-                      shine.opacity.light + 0.2,
-                      shine.opacity.light
-                    ],
-                    transition: {
-                      duration: 2 + Math.random(),
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: shine.delay
-                    }
-                  }}
-                >
-                  {shine.pattern.elements?.map((element, j) => (
-                    <rect
-                      key={j}
-                      x={element.x}
-                      y={element.y}
-                      width={element.width}
-                      height={element.height}
-                    />
-                  ))}
-                </motion.g>
-              )}
-            </motion.svg>
-          ))}
-        </>
-      )}
+      {sparkles.map((sparkle, i) => (
+        <PixelSparkle
+          key={i}
+          variant={sparkle.variant}
+          delay={sparkle.delay}
+          size={sparkle.size}
+          className={
+            type === "epic"
+              ? "text-[#b480e4] dark:text-gray-200"
+              : "text-[#fab5e2] dark:text-gray-200"
+          }
+          style={{
+            top: sparkle.top,
+            left: sparkle.left,
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+      ))}
 
       <motion.div
         className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full flex items-center justify-center"

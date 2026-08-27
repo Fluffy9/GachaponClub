@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { WalletProvider as SuiWalletProvider } from "@suiet/wallet-kit";
+import { WalletProvider as SuiWalletProvider, SuietWallet, SlushWallet } from "@suiet/wallet-kit";
 import { PopupProvider } from './components/ui/popup-provider';
 import { ThemeProvider } from './components/theme-provider';
 import Home from './pages/Home';
@@ -15,7 +15,12 @@ import EpicCapsule from './pages/EpicCapsule';
 import NotFound from './pages/404';
 import './index.css';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
-import { WagmiProvider } from 'wagmi';
+import {
+  injectedWallet,
+  rainbowWallet,
+  metaMaskWallet,
+} from '@rainbow-me/rainbowkit/wallets';
+import { WagmiProvider, createStorage, noopStorage } from 'wagmi';
 import { http } from 'viem';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { base } from 'wagmi/chains';
@@ -29,6 +34,15 @@ const config = getDefaultConfig({
   projectId: WALLETCONNECT_PROJECT_ID,
   chains: [base],
   ssr: false,
+  // Do not include walletConnectWallet. RainbowKit registers a second WC
+  // connector with showQrModal: true, and its setup() opens the QR overlay on load.
+  wallets: [
+    {
+      groupName: 'Popular',
+      wallets: [injectedWallet, rainbowWallet, metaMaskWallet],
+    },
+  ],
+  storage: createStorage({ storage: noopStorage }),
   transports: {
     [base.id]: http(BASE_RPC_URL),
   },
@@ -39,9 +53,9 @@ const queryClient = new QueryClient();
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <WagmiProvider config={config}>
+      <WagmiProvider config={config} reconnectOnMount={false}>
         <RainbowKitProvider>
-          <SuiWalletProvider>
+          <SuiWalletProvider autoConnect={false} defaultWallets={[SuietWallet, SlushWallet]}>
             <ThemeProvider defaultTheme="light" storageKey="gacha-theme">
               <WalletProvider>
                 <PopupProvider>

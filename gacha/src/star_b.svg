@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"
+     width="32" height="32" shape-rendering="crispEdges"
+     role="img" aria-label="Pixel-art sparkle, small star">
+  <title>Sparkle star SMALL</title>
+  <g fill="#FFFFFF">
+    <g opacity="0">
+      <rect x="16" y="16" width="1" height="1"/>
+      <animate attributeName="opacity" calcMode="discrete" values="1;0;0;0;0;0;0;0;0;0;0;0;0" keyTimes="0;0.0769231;0.153846;0.230769;0.307692;0.384615;0.461538;0.538462;0.615385;0.692308;0.769231;0.846154;0.923077" dur="1.04s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <rect x="16" y="15" width="1" height="1"/>
+      <rect x="15" y="16" width="3" height="1"/>
+      <rect x="16" y="17" width="1" height="1"/>
+      <animate attributeName="opacity" calcMode="discrete" values="0;1;0;0;0;0;0;0;0;0;0;0;0" keyTimes="0;0.0769231;0.153846;0.230769;0.307692;0.384615;0.461538;0.538462;0.615385;0.692308;0.769231;0.846154;0.923077" dur="1.04s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <rect x="16" y="14" width="1" height="1"/>
+      <rect x="16" y="15" width="1" height="1"/>
+      <rect x="14" y="16" width="5" height="1"/>
+      <rect x="16" y="17" width="1" height="1"/>
+      <rect x="16" y="18" width="1" height="1"/>
+      <animate attributeName="opacity" calcMode="discrete" values="0;0;1;0;0;0;0;0;0;0;0;0;0" keyTimes="0;0.0769231;0.153846;0.230769;0.307692;0.384615;0.461538;0.538462;0.615385;0.692308;0.769231;0.846154;0.923077" dur="1.04s" repeatCount="indefinite"/>
+    </g>
+    <g opacity="0">
+      <rect x="16" y="13" width="1" height="1"/>
+      <rect x="13" y="16" width="1" height="1"/>
+      <rect x="19" y="16" width="1" height="1"/>
+      <rect x="16" y="19" width="1" height="1"/>
+      <animate attributeName="opacity" calcMode="discrete" values="0;0;0;1;0;0;0;0;0;0;0;0;0" keyTimes="0;0.0769231;0.153846;0.230769;0.307692;0.384615;0.461538;0.538462;0.615385;0.692308;0.769231;0.846154;0.923077" dur="1.04s" repeatCount="indefinite"/>
+    </g>
+  </g>
+</svg>

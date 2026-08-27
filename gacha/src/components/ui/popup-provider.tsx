@@ -16,11 +16,6 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
     const [content, setContent] = useState<React.ReactNode>(null);
     const [title, setTitle] = useState<string>();
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
 
     const openPopup = (newContent: React.ReactNode, newTitle?: string) => {
         setContent(newContent);
@@ -53,8 +48,6 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
             document.removeEventListener("keydown", handleEscape);
         };
     }, [isOpen]);
-
-    if (!mounted) return null;
 
     return (
         <PopupContext.Provider value={{ isOpen, content, title, openPopup, closePopup }}>

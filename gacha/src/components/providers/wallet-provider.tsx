@@ -135,7 +135,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
     const { disconnect: disconnectEth } = useDisconnect();
     const { switchChainAsync } = useSwitchChain();
-    const { data: walletClient } = useWalletClient();
+    const { data: walletClient } = useWalletClient({
+        query: { enabled: Boolean(ethAddress && ethConnected) },
+    });
 
     // Fetch approved NFTs from the machine
     const fetchApprovedNFTs = async () => {
