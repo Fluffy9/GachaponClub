@@ -16,7 +16,7 @@ const FLASH_S = 1.04
 /** Full loop: flash, then idle so capsules do not shimmer. */
 export const SPARKLE_CYCLE_S = 4.2
 
-function svgWithPacing(markup: string, delay: number) {
+export function svgWithPacing(markup: string, delay: number) {
   const scale = FLASH_S / SPARKLE_CYCLE_S
   return markup
     .replaceAll('fill="#FFFFFF"', 'fill="currentColor"')

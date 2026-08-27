@@ -1,6 +1,3 @@
-// import '@rainbow-me/rainbowkit/styles.css'
-// import { ClientProviders } from "@/components/providers/client-providers"
-
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { WalletProvider as SuiWalletProvider, SuietWallet, SlushWallet } from "@suiet/wallet-kit";
@@ -9,9 +6,6 @@ import { ThemeProvider } from './components/theme-provider';
 import Home from './pages/Home';
 import Collection from './pages/Collection';
 import Admin from './pages/Admin';
-import CommonCapsule from './pages/CommonCapsule';
-import RareCapsule from './pages/RareCapsule';
-import EpicCapsule from './pages/EpicCapsule';
 import NotFound from './pages/404';
 import './index.css';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
@@ -28,6 +22,7 @@ import '@rainbow-me/rainbowkit/styles.css';
 import { WalletProvider } from './components/providers/wallet-provider';
 import { AdminNav } from './components/admin-nav';
 import { BASE_RPC_URL, WALLETCONNECT_PROJECT_ID } from './lib/constants';
+import { Toaster } from 'sonner';
 
 const config = getDefaultConfig({
   appName: 'Gachapon Club',
@@ -67,15 +62,13 @@ export default function App() {
                             <Route path="/" element={<Home />} />
                             <Route path="/collection" element={<Collection />} />
                             <Route path="/admin" element={<Admin />} />
-                            <Route path="/common-capsule" element={<CommonCapsule />} />
-                            <Route path="/rare-capsule" element={<RareCapsule />} />
-                            <Route path="/epic-capsule" element={<EpicCapsule />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
                         <AdminNav />
                       </div>
                     </div>
+                    <Toaster position="top-right" richColors />
                   </Router>
                 </PopupProvider>
               </WalletProvider>

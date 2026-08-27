@@ -161,15 +161,6 @@ export default function Collection() {
         document.title = "Collection | Gachapon Club"
     }, []);
 
-    // Debug logging for component state
-    useEffect(() => {
-        console.log('Collection component state:', {
-            prizePoolLength: prizePool?.length,
-            currentPage,
-            gridCols
-        });
-    }, [prizePool, currentPage, gridCols]);
-
     useEffect(() => {
         fetchPrizePool().catch((error) => {
             console.error('Error fetching prize pool:', error);
@@ -184,18 +175,10 @@ export default function Collection() {
     const endIndex = startIndex + itemsPerPage;
     const currentPrizes = prizePool.slice(startIndex, endIndex);
 
-    console.log('Prize pool state:', {
-        totalPrizes: prizePool.length,
-        startIndex,
-        endIndex,
-        currentPrizesCount: currentPrizes.length
-    });
-
     // Update grid columns based on window width
     useEffect(() => {
         const updateGridCols = () => {
             const width = window.innerWidth;
-            console.log('Window width changed:', width);
             if (width < 640) {
                 setGridCols(1);
             } else if (width < 1024) {
@@ -327,7 +310,6 @@ export default function Collection() {
                                     index={0}
                                     row={0}
                                     col={0}
-                                    totalCols={1}
                                     showPopups={false}
                                 />
                             </div>
@@ -381,7 +363,6 @@ export default function Collection() {
                                                 index={index}
                                                 row={row}
                                                 col={col}
-                                                totalCols={gridCols}
                                                 showPopups={showPopups}
                                                 item={capsuleItem}
                                                 renderPopupContent={renderPopupContent}

@@ -78,7 +78,6 @@ export default function NotFound() {
                             index={0}
                             row={0}
                             col={0}
-                            totalCols={1}
                             showPopups={false}
                         />
                     </div>

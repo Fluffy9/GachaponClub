@@ -11,7 +11,6 @@ interface GachaCapsuleProps {
   index: number
   row: number
   col: number
-  totalCols: number
   showPopups?: boolean
   showBuyButton?: boolean
   isConnected?: boolean
@@ -42,7 +41,6 @@ export function GachaCapsule({
   index,
   row,
   col,
-  totalCols,
   showPopups,
   showBuyButton,
   isConnected,
@@ -63,24 +61,8 @@ export function GachaCapsule({
     epic: "#ffd93b",
   }
 
-  const darkModeColors = {
-    common: "#5fb8cc",
-    rare: "#d87eb6",
-    epic: "#e0b441",
-  }
-
   const handleClick = () => {
-    console.log('[GachaCapsule] handleClick called', {
-      showPopups,
-      hasItem: !!item,
-      isConnected,
-      hasOnBuy: !!onBuy,
-      hasOnConnect: !!onConnect,
-      type
-    });
-
     if (showPopups && item) {
-      console.log('[GachaCapsule] Opening popup with item:', item);
       openPopup(
         renderPopupContent ? renderPopupContent(item) : (
           <div className="flex flex-col items-center gap-4 p-4">
@@ -99,18 +81,8 @@ export function GachaCapsule({
                 ) : isConnected ? (
                   <button
                     onClick={(e) => {
-                      console.log('[GachaCapsule] Buy button clicked', {
-                        isConnected,
-                        hasOnBuy: !!onBuy,
-                        type
-                      });
                       e.stopPropagation();
-                      if (onBuy) {
-                        console.log('[GachaCapsule] Calling onBuy');
-                        onBuy();
-                      } else {
-                        console.log('[GachaCapsule] onBuy is not defined');
-                      }
+                      onBuy?.();
                     }}
                     className="mt-4 px-6 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors duration-200 font-medium"
                   >
@@ -119,16 +91,8 @@ export function GachaCapsule({
                 ) : (
                   <button
                     onClick={(e) => {
-                      console.log('[GachaCapsule] Connect button clicked', {
-                        hasOnConnect: !!onConnect
-                      });
                       e.stopPropagation();
-                      if (onConnect) {
-                        console.log('[GachaCapsule] Calling onConnect');
-                        onConnect();
-                      } else {
-                        console.log('[GachaCapsule] onConnect is not defined');
-                      }
+                      onConnect?.();
                     }}
                     className="mt-4 px-6 py-2 bg-[#b480e4] hover:bg-[#9d6ad0] text-white rounded-lg transition-colors duration-200 font-medium"
                   >
@@ -141,21 +105,11 @@ export function GachaCapsule({
         )
       );
     } else {
-      console.log('[GachaCapsule] Direct capsule click', {
-        isConnected,
-        hasOnBuy: !!onBuy,
-        hasOnConnect: !!onConnect,
-        type
-      });
       setIsSelected(!isSelected);
       if (isConnected && onBuy) {
-        console.log('[GachaCapsule] Direct click - calling onBuy');
         onBuy();
       } else if (onConnect) {
-        console.log('[GachaCapsule] Direct click - calling onConnect');
         onConnect();
-      } else {
-        console.log('[GachaCapsule] No action available for direct click');
       }
     }
   };

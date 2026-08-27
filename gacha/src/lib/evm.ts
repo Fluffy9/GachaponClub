@@ -320,6 +320,71 @@ export const MACHINE_ABI = [
         outputs: [],
     },
     {
+        type: 'function',
+        name: 'cancelAdminTransfer',
+        stateMutability: 'nonpayable',
+        inputs: [],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'setRescueDelay',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'delay', type: 'uint256' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'registerRarity',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'tokenContract', type: 'address' },
+            { name: 'name', type: 'string' },
+            { name: 'price', type: 'uint256' },
+        ],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'setVRFConfig',
+        stateMutability: 'nonpayable',
+        inputs: [
+            {
+                name: 'config',
+                type: 'tuple',
+                components: [
+                    { name: 'coordinator', type: 'address' },
+                    { name: 'keyHash', type: 'bytes32' },
+                    { name: 'subscriptionId', type: 'uint256' },
+                    { name: 'requestConfirmations', type: 'uint16' },
+                    { name: 'callbackGasLimit', type: 'uint32' },
+                    { name: 'nativePayment', type: 'bool' },
+                ],
+            },
+        ],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'rescueDelay',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ name: '', type: 'uint256' }],
+    },
+    {
+        type: 'function',
+        name: 'draws',
+        stateMutability: 'view',
+        inputs: [{ name: 'requestId', type: 'uint256' }],
+        outputs: [
+            { name: 'player', type: 'address' },
+            { name: 'rarityId', type: 'uint256' },
+            { name: 'fulfilled', type: 'bool' },
+            { name: 'requestedAt', type: 'uint64' },
+            { name: 'bagLength', type: 'uint64' },
+        ],
+    },
+    {
         type: 'event',
         name: 'NFTApproved',
         inputs: [
@@ -556,6 +621,61 @@ export async function getEvmClaimCount(player: Address): Promise<number> {
         args: [player],
     });
     return Number(count);
+}
+
+export type EvmPrizeClaim = {
+    index: number
+    tokenContract: Address
+    isERC721: boolean
+    assignedAt: bigint
+    tokenId: bigint
+    amount: bigint
+}
+
+export async function fetchEvmClaims(player: Address): Promise<EvmPrizeClaim[]> {
+    const count = await getEvmClaimCount(player)
+    const claims: EvmPrizeClaim[] = []
+    for (let index = 0; index < count; index++) {
+        const claim = await evmPublicClient.readContract({
+            address: EVM_MACHINE_ADDRESS,
+            abi: MACHINE_ABI,
+            functionName: 'getClaim',
+            args: [player, BigInt(index)],
+        })
+        claims.push({
+            index,
+            tokenContract: claim.tokenContract,
+            isERC721: claim.isERC721,
+            assignedAt: BigInt(claim.assignedAt),
+            tokenId: claim.tokenId,
+            amount: claim.amount,
+        })
+    }
+    return claims
+}
+
+export async function fetchMachinePaused(): Promise<boolean> {
+    try {
+        return await evmPublicClient.readContract({
+            address: EVM_MACHINE_ADDRESS,
+            abi: MACHINE_ABI,
+            functionName: 'paused',
+        })
+    } catch {
+        return false
+    }
+}
+
+export async function fetchRescueDelay(): Promise<bigint> {
+    try {
+        return await evmPublicClient.readContract({
+            address: EVM_MACHINE_ADDRESS,
+            abi: MACHINE_ABI,
+            functionName: 'rescueDelay',
+        })
+    } catch {
+        return 0n
+    }
 }
 
 export async function fetchPendingDraws(rarityId: bigint): Promise<bigint> {

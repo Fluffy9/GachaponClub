@@ -1,13 +1,11 @@
 "use client"
 
-import { Link, useLocation } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Home, Grid3X3 } from "lucide-react"
 import { WalletButton } from "./wallet-button"
 
 export function Navigation() {
-    const location = useLocation()
-
     const container = {
         hidden: { opacity: 0, y: -20 },
         show: {

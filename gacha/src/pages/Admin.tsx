@@ -15,7 +15,7 @@ import {
     getImageUrl
 } from "../lib/constants"
 import { AlertCircle, Wallet, Coins, Settings, ArrowUpRight, ArrowDownLeft } from "lucide-react"
-import { toast, Toaster } from 'sonner'
+import { toast } from 'sonner'
 import { parseEther, isAddress, type Address, zeroAddress, formatEther } from 'viem'
 import {
     formatEth,
@@ -25,11 +25,43 @@ import {
     isEvmAdmin,
     isEvmEconomist,
     fetchEconomistRole,
+    fetchMachinePaused,
+    fetchRescueDelay,
     type EvmRarity,
     type EvmMachineStats,
     type EvmApprovedNft,
     type PrizeType,
 } from "../lib/evm"
+import {
+    acceptAdminWrite,
+    approveNftWrite,
+    cancelAdminTransferWrite,
+    cancelVrfSubscriptionWrite,
+    createVrfSubscriptionWrite,
+    fundVrfWrite,
+    grantRoleWrite,
+    machineCall,
+    pauseWrite,
+    redeemPrizeWrite,
+    registerRarityWrite,
+    rescueStuckDrawWrite,
+    revokeRoleWrite,
+    setRescueDelayWrite,
+    setRarityEnabledWrite,
+    setRarityPriceWrite,
+    setVrfConfigWrite,
+    transferAdminWrite,
+    unpauseWrite,
+    withdrawPrizeWrite,
+    withdrawWrite,
+} from "../lib/machine-writes"
+import {
+    RegisterRarityForm,
+    RescueStuckDrawForm,
+    SetRescueDelayForm,
+    SetVrfConfigForm,
+    WithdrawPrizeForm,
+} from "../components/machine-ops"
 
 const container = {
     hidden: { opacity: 0, y: 20 },
@@ -86,6 +118,18 @@ export default function Admin() {
     const [newAdmin, setNewAdmin] = useState("");
     const [economistAddress, setEconomistAddress] = useState("");
     const [redeemRarity, setRedeemRarity] = useState<PrizeType>("common");
+    const [machinePaused, setMachinePaused] = useState(false);
+    const [rescueDelay, setRescueDelay] = useState(0n);
+    const [rescueRequestId, setRescueRequestId] = useState("");
+    const [withdrawPrizeRarity, setWithdrawPrizeRarity] = useState<PrizeType>("common");
+    const [withdrawPrizeIndex, setWithdrawPrizeIndex] = useState("0");
+    const [withdrawPrizeToken, setWithdrawPrizeToken] = useState("");
+    const [withdrawPrizeTokenId, setWithdrawPrizeTokenId] = useState("");
+    const [withdrawPrizeTo, setWithdrawPrizeTo] = useState("");
+    const [newRarityToken, setNewRarityToken] = useState("");
+    const [newRarityName, setNewRarityName] = useState("");
+    const [newRarityPrice, setNewRarityPrice] = useState("0.01");
+    const [rescueDelayInput, setRescueDelayInput] = useState("86400");
 
     useEffect(() => {
         document.title = "Admin Dashboard | Gachapon Club"
@@ -93,14 +137,19 @@ export default function Admin() {
 
     const refresh = useCallback(async () => {
         try {
-            const [stats, onChainRarities, approved] = await Promise.all([
+            const [stats, onChainRarities, approved, paused, delay] = await Promise.all([
                 fetchEvmMachineStats(),
                 fetchEvmRarities(),
                 fetchEvmApprovedNfts(),
+                fetchMachinePaused(),
+                fetchRescueDelay(),
             ]);
             setMachineStats(stats);
             setRarities(onChainRarities);
             setApprovedNfts(approved);
+            setMachinePaused(paused);
+            setRescueDelay(delay);
+            setRescueDelayInput(delay > 0n ? delay.toString() : "86400");
             const nextPrices = { common: 0.01, rare: 0.05, epic: 0.1 };
             for (const rarity of onChainRarities) {
                 const key = rarity.name.toLowerCase() as keyof typeof nextPrices;
@@ -194,12 +243,9 @@ export default function Admin() {
             if (!isAddress(nftType)) {
                 throw new Error('Enter an ERC721 or ERC1155 contract address');
             }
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'approveNFT',
-                args: [BigInt(EVM_RARITY_ID[tier]), nftType as Address, isApproved],
-            });
+            await callContract(machineCall(
+                approveNftWrite(BigInt(EVM_RARITY_ID[tier]), nftType as Address, isApproved)
+            ));
             if (isApproved) setNewNFTType("");
         });
     };
@@ -209,23 +255,17 @@ export default function Admin() {
             if (machineStats.treasuryBalance === 0n) {
                 throw new Error('No ETH in the machine');
             }
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'withdraw',
-                args: [zeroAddress, machineStats.treasuryBalance, address as Address],
-            });
+            await callContract(machineCall(
+                withdrawWrite(zeroAddress, machineStats.treasuryBalance, address as Address)
+            ));
         });
     };
 
     const handleRedeemPrize = async () => {
         await runAdmin(`Redeemed last ${redeemRarity} prize`, async () => {
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'redeemPrize',
-                args: [BigInt(EVM_RARITY_ID[redeemRarity]), address as Address],
-            });
+            await callContract(machineCall(
+                redeemPrizeWrite(BigInt(EVM_RARITY_ID[redeemRarity]), address as Address)
+            ));
         });
     };
 
@@ -238,24 +278,16 @@ export default function Admin() {
             ];
             for (const [tier, value] of updates) {
                 if (!(value > 0)) throw new Error(`${tier} price must be greater than 0`);
-                await callContract({
-                    chain: 'eth',
-                    contractAddress: EVM_MACHINE_ADDRESS,
-                    method: 'setRarityPrice',
-                    args: [BigInt(EVM_RARITY_ID[tier]), parseEther(value.toString())],
-                });
+                await callContract(machineCall(
+                    setRarityPriceWrite(BigInt(EVM_RARITY_ID[tier]), parseEther(value.toString()))
+                ));
             }
         });
     };
 
     const handleToggleRarity = async (rarity: EvmRarity) => {
         await runEconomist(`${rarity.name} ${rarity.enabled ? 'disabled' : 'enabled'}`, async () => {
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'setRarityEnabled',
-                args: [BigInt(rarity.id), !rarity.enabled],
-            });
+            await callContract(machineCall(setRarityEnabledWrite(BigInt(rarity.id), !rarity.enabled)));
         });
     };
 
@@ -263,13 +295,7 @@ export default function Admin() {
         await runAdmin(`Funded VRF with ${vrfFund} ETH`, async () => {
             const value = parseEther(vrfFund);
             if (value <= 0n) throw new Error('Enter an ETH amount');
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'fundVrf',
-                args: [],
-                options: { value },
-            });
+            await callContract(machineCall(fundVrfWrite(value)));
         });
     };
 
@@ -283,23 +309,13 @@ export default function Admin() {
             )) {
                 throw new Error('Cancel aborted');
             }
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'cancelVrfSubscription',
-                args: [address as Address],
-            });
+            await callContract(machineCall(cancelVrfSubscriptionWrite(address as Address)));
         });
     };
 
     const handleCreateVrf = async () => {
         await runAdmin('Created a new VRF subscription', async () => {
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'createVrfSubscription',
-                args: [],
-            });
+            await callContract(machineCall(createVrfSubscriptionWrite()));
         });
     };
 
@@ -309,12 +325,7 @@ export default function Admin() {
             if (!window.confirm(`Start two-step transfer of DEFAULT_ADMIN and ADMIN_ROLE to ${newAdmin}?`)) {
                 throw new Error('Transfer cancelled');
             }
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'transferAdmin',
-                args: [newAdmin as Address],
-            });
+            await callContract(machineCall(transferAdminWrite(newAdmin as Address)));
             setNewAdmin("");
         });
     };
@@ -328,12 +339,7 @@ export default function Admin() {
                 openPopup(<WalletPopup />, "Your Wallet");
                 throw new Error('Connect the pending admin wallet on Base');
             }
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'acceptAdmin',
-                args: [],
-            });
+            await callContract(machineCall(acceptAdminWrite()));
             setSuccess('Admin transfer accepted');
             toast.success('Admin transfer accepted');
             await Promise.all([refresh(), fetchPrizePool()]);
@@ -348,12 +354,7 @@ export default function Admin() {
 
     const handlePause = async (paused: boolean) => {
         await runEconomist(paused ? 'Machine paused' : 'Machine unpaused', async () => {
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: paused ? 'pause' : 'unpause',
-                args: [],
-            });
+            await callContract(machineCall(paused ? pauseWrite() : unpauseWrite()));
         });
     };
 
@@ -361,13 +362,63 @@ export default function Admin() {
         await runAdmin(grant ? 'Economist granted' : 'Economist revoked', async () => {
             if (!isAddress(economistAddress)) throw new Error('Enter a valid address');
             const role = await fetchEconomistRole();
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: grant ? 'grantRole' : 'revokeRole',
-                args: [role, economistAddress as Address],
-            });
+            await callContract(machineCall(
+                grant ? grantRoleWrite(role, economistAddress as Address) : revokeRoleWrite(role, economistAddress as Address)
+            ));
             setEconomistAddress("");
+        });
+    };
+
+    const handleWithdrawPrize = async () => {
+        await runAdmin('Withdrew prize from bag', async () => {
+            const recipient = withdrawPrizeTo || address;
+            if (!recipient || !isAddress(recipient)) throw new Error('Enter a recipient');
+            if (!isAddress(withdrawPrizeToken)) throw new Error('Enter the token contract');
+            await callContract(machineCall(withdrawPrizeWrite(
+                BigInt(EVM_RARITY_ID[withdrawPrizeRarity]),
+                BigInt(withdrawPrizeIndex || '0'),
+                withdrawPrizeToken as Address,
+                BigInt(withdrawPrizeTokenId || '0'),
+                recipient as Address,
+            )));
+        });
+    };
+
+    const handleCancelAdminTransfer = async () => {
+        await runAdmin('Admin transfer cancelled', async () => {
+            await callContract(machineCall(cancelAdminTransferWrite()));
+        });
+    };
+
+    const handleAdminRescue = async () => {
+        await runAdmin('Draw rescued', async () => {
+            if (!rescueRequestId) throw new Error('Enter a VRF request id');
+            await callContract(machineCall(rescueStuckDrawWrite(BigInt(rescueRequestId))));
+        });
+    };
+
+    const handleSetRescueDelay = async () => {
+        await runAdmin('Rescue delay updated', async () => {
+            const delay = BigInt(rescueDelayInput);
+            if (delay <= 0n) throw new Error('Delay must be greater than 0');
+            await callContract(machineCall(setRescueDelayWrite(delay)));
+        });
+    };
+
+    const handleRegisterRarity = async () => {
+        await runAdmin('Rarity registered', async () => {
+            if (!isAddress(newRarityToken)) throw new Error('Enter a capsule contract');
+            if (!newRarityName.trim()) throw new Error('Enter a name');
+            const price = parseEther(newRarityPrice);
+            if (price <= 0n) throw new Error('Price must be greater than 0');
+            await callContract(machineCall(registerRarityWrite(newRarityToken as Address, newRarityName.trim(), price)));
+        });
+    };
+
+    const handleSetVrfConfig = async (config: Parameters<typeof setVrfConfigWrite>[0]) => {
+        await runAdmin('VRF config updated', async () => {
+            if (!isAddress(config.coordinator)) throw new Error('Enter the coordinator address');
+            await callContract(machineCall(setVrfConfigWrite(config)));
         });
     };
 
@@ -419,8 +470,6 @@ export default function Admin() {
     return (
         <main className="min-h-screen flex flex-col items-center bg-pattern">
             <div className="w-full max-w-6xl px-4 py-6">
-                <Toaster position="top-right" richColors />
-
                 <div className="flex flex-col items-center mb-8 relative">
                     <motion.div
                         variants={item}
@@ -658,6 +707,22 @@ export default function Admin() {
                                         </button>
                                     </div>
                                 </div>
+                                <WithdrawPrizeForm
+                                    rarity={withdrawPrizeRarity}
+                                    index={withdrawPrizeIndex}
+                                    tokenContract={withdrawPrizeToken}
+                                    tokenId={withdrawPrizeTokenId}
+                                    to={withdrawPrizeTo || address || ''}
+                                    onChange={(field, value) => {
+                                        if (field === 'rarity') setWithdrawPrizeRarity(value as PrizeType);
+                                        if (field === 'index') setWithdrawPrizeIndex(value);
+                                        if (field === 'tokenContract') setWithdrawPrizeToken(value);
+                                        if (field === 'tokenId') setWithdrawPrizeTokenId(value);
+                                        if (field === 'to') setWithdrawPrizeTo(value);
+                                    }}
+                                    onSubmit={handleWithdrawPrize}
+                                    disabled={!adminWrites}
+                                />
                             </div>
                         )}
 
@@ -778,7 +843,9 @@ export default function Admin() {
                                             Unpause
                                         </button>
                                     </div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Claim and stuck-draw rescue stay available while paused. Economist and admin can both pause.</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Machine is {machinePaused ? 'paused' : 'live'}. Claim and stuck-draw rescue stay available while paused. Economist and admin can both pause.
+                                    </p>
                                 </div>
 
                                 <div className="mb-6">
@@ -841,13 +908,55 @@ export default function Admin() {
                                         >
                                             Accept transfer
                                         </button>
+                                        <button
+                                            onClick={handleCancelAdminTransfer}
+                                            disabled={!adminWrites}
+                                            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Cancel transfer
+                                        </button>
                                     </div>
                                 </div>
+
+                                <div className="mb-6">
+                                    <RescueStuckDrawForm
+                                        requestId={rescueRequestId}
+                                        onRequestIdChange={setRescueRequestId}
+                                        onRescue={handleAdminRescue}
+                                        disabled={!adminWrites}
+                                    />
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Current player rescue delay: {rescueDelay.toString()} seconds.
+                                    </p>
+                                </div>
+
+                                <SetRescueDelayForm
+                                    delaySeconds={rescueDelayInput}
+                                    onChange={setRescueDelayInput}
+                                    onSubmit={handleSetRescueDelay}
+                                    disabled={!adminWrites}
+                                />
+
+                                <RegisterRarityForm
+                                    tokenContract={newRarityToken}
+                                    name={newRarityName}
+                                    priceEth={newRarityPrice}
+                                    onChange={(field, value) => {
+                                        if (field === 'tokenContract') setNewRarityToken(value);
+                                        if (field === 'name') setNewRarityName(value);
+                                        if (field === 'priceEth') setNewRarityPrice(value);
+                                    }}
+                                    onSubmit={handleRegisterRarity}
+                                    disabled={!adminWrites}
+                                />
+
+                                <SetVrfConfigForm disabled={!adminWrites} onSubmit={handleSetVrfConfig} />
 
                                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Contract Info</h3>
                                 <div className="space-y-4">
                                     {[
                                         ['Connected wallet', address || 'Not connected'],
+                                        ['Paused', machinePaused ? 'yes' : 'no'],
                                         ['Machine', EVM_MACHINE_ADDRESS],
                                         ['Common capsule', EVM_NFT_ADDRESSES.COMMON],
                                         ['Rare capsule', EVM_NFT_ADDRESSES.RARE],

@@ -1,13 +1,23 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useWallet } from './providers/wallet-provider';
 import { Wallet, Gift, RefreshCw, Trash2, Loader2 } from 'lucide-react';
-import type { NFT, RawPrizeInfo } from '../lib/wallet-context';
-import { SUI_CONTRACT_ADDRESS, SUI_MACHINE_ID, SUI_RANDOM_ID, getImageUrl, EVM_MACHINE_ADDRESS, EVM_NFT_ADDRESSES, EVM_RARITY_ID } from '../lib/constants';
-import { Transaction } from '@mysten/sui/transactions';
+import type { NFT } from '../lib/wallet-context';
+import { SUI_CONTRACT_ADDRESS, getImageUrl } from '../lib/constants';
 import { toast } from 'sonner';
 import { formatAddress } from '../lib/utils';
-import { getEvmClaimCount, isCapsuleApproved, fetchPendingDraws } from '../lib/evm';
+import { getEvmClaimCount, fetchEvmClaims, type EvmPrizeClaim } from '../lib/evm';
 import { isAddress, type Address } from 'viem';
+import { loadLastPlayRequestId } from '../lib/machine-writes';
+import {
+    burnSuiNft,
+    claimPrize,
+    donateEvmNft,
+    donateSuiNft,
+    redeemEvmCapsule,
+    redeemSuiCapsule,
+    rescueStuckDraw,
+} from '../lib/inventory-actions';
+import { PendingClaimsPanel, RescueStuckDrawForm } from './machine-ops';
 
 interface Capsule extends NFT {
     quantity: number;
@@ -43,25 +53,8 @@ const DEFAULT_CAPSULES: Capsule[] = [
     }
 ];
 
-// Helper function to safely parse JSON
-const safeJsonParse = (json: string): any => {
-    try {
-        return JSON.parse(json);
-    } catch (e) {
-        console.warn('Failed to parse JSON:', e);
-        return {};
-    }
-};
-
-// Helper function to get owner address
-const getOwnerAddress = (raw: string): string => {
-    const data = safeJsonParse(raw);
-    debugger;
-    return data?.data?.owner?.AddressOwner || '';
-};
-
 export function Inventory() {
-    const { walletType, address, chain, balances, nfts, approvedNFTs, callContract, fetchApprovedNFTs, fetchPrizePool, fetchNFTs, suiClient } = useWallet();
+    const { walletType, address, chain, nfts, approvedNFTs, callContract, fetchApprovedNFTs, fetchPrizePool, fetchNFTs, suiClient } = useWallet();
     const [activeTab, setActiveTab] = useState<'capsules' | 'nfts'>('capsules');
     const [isDonating, setIsDonating] = useState<string | null>(null);
     const [donationError, setDonationError] = useState<string | null>(null);
@@ -74,6 +67,16 @@ export function Inventory() {
     const [donateAmount, setDonateAmount] = useState('1');
     const [donateStandard, setDonateStandard] = useState<'erc721' | 'erc1155'>('erc721');
     const [donateTier, setDonateTier] = useState<'common' | 'rare' | 'epic'>('common');
+    const [rescueRequestId, setRescueRequestId] = useState('');
+    const [pendingClaims, setPendingClaims] = useState<EvmPrizeClaim[]>([]);
+    const [claimingIndex, setClaimingIndex] = useState<number | null>(null);
+
+    const refreshEvmDrawState = async (owner?: string | null) => {
+        if (walletType !== 'eth' || !owner) return;
+        const claims = await fetchEvmClaims(owner as Address);
+        setPendingClaims(claims);
+        setRescueRequestId((current) => current || loadLastPlayRequestId(owner));
+    };
 
     // Fetch data when component mounts and when activeTab changes
     useEffect(() => {
@@ -83,14 +86,10 @@ export function Inventory() {
                     if (walletType === 'eth') {
                         let pending = await getEvmClaimCount(address as `0x${string}`);
                         while (pending > 0) {
-                            await callContract({
-                                chain: 'eth',
-                                contractAddress: EVM_MACHINE_ADDRESS,
-                                method: 'claim',
-                                args: [0n],
-                            });
+                            await claimPrize(callContract, 0);
                             pending -= 1;
                         }
+                        await refreshEvmDrawState(address);
                     }
                     await Promise.all([
                         fetchApprovedNFTs(),
@@ -195,17 +194,6 @@ export function Inventory() {
         return Object.values(merged);
     }, [capsules]);
 
-    // Format address to show only first 6 and last 4 characters
-    const formatAddress = (address: string) => {
-        return `${address.slice(0, 6)}...${address.slice(-4)}`;
-    };
-
-    // Format token amount with proper decimals
-    const formatTokenAmount = (amount: string, decimals: number) => {
-        const num = parseFloat(amount) / Math.pow(10, decimals);
-        return num.toFixed(4);
-    };
-
     const evmDonateTiers = useMemo(() => {
         if (!isAddress(donateContract)) return [];
         const addr = donateContract.toLowerCase();
@@ -217,49 +205,19 @@ export function Inventory() {
     const handleEvmDonate = async () => {
         try {
             if (!address) throw new Error('Wallet not connected');
-            if (!isAddress(donateContract)) throw new Error('Enter an NFT contract address');
-            if (!donateTokenId) throw new Error('Enter a token id');
-            const rarityId = EVM_RARITY_ID[donateTier];
-            if (evmDonateTiers.length > 0 && !evmDonateTiers.includes(donateTier)) {
-                throw new Error(`This collection is not approved for the ${donateTier} bag`);
-            }
-            const tokenId = BigInt(donateTokenId);
-            const amount = donateStandard === 'erc721' ? 1n : BigInt(donateAmount || '1');
-            if (amount < 1n) throw new Error('Amount must be at least 1');
-
-            const pending = await fetchPendingDraws(BigInt(rarityId));
-            if (pending > 0n) {
-                throw new Error('This bag has a draw in flight. Wait a moment, or buy a capsule instead.');
-            }
-
             setIsDonating(donateContract);
             setDonationError(null);
             setDonationSuccess(null);
-
-            if (donateStandard === 'erc721') {
-                await callContract({
-                    chain: 'eth',
-                    contractAddress: donateContract,
-                    method: 'approve',
-                    args: [EVM_MACHINE_ADDRESS as Address, tokenId],
-                });
-            } else {
-                await callContract({
-                    chain: 'eth',
-                    contractAddress: donateContract,
-                    method: 'setApprovalForAll',
-                    args: [EVM_MACHINE_ADDRESS as Address, true],
-                });
-            }
-
-            await callContract({
-                chain: 'eth',
-                contractAddress: EVM_MACHINE_ADDRESS,
-                method: 'donateNFT',
-                args: [donateContract as Address, tokenId, amount, BigInt(rarityId)],
+            const { label } = await donateEvmNft({
+                callContract,
+                address,
+                donateContract,
+                donateTokenId,
+                donateAmount,
+                donateStandard,
+                donateTier,
+                allowedTiers: evmDonateTiers,
             });
-
-            const label = `Donated to ${donateTier} bag`;
             setDonationSuccess(label);
             toast.success(`${label} — you received a ${donateTier} capsule`);
             await Promise.all([
@@ -276,114 +234,63 @@ export function Inventory() {
         }
     };
 
+    const handleRescueStuckDraw = async () => {
+        try {
+            setIsRedeeming('rescue');
+            setRedeemError(null);
+            await rescueStuckDraw(callContract, rescueRequestId);
+            toast.success('Draw rescued — claim the capsule refund below');
+            await refreshEvmDrawState(address);
+            if (address) await fetchNFTs(address);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to rescue draw';
+            setRedeemError(message);
+            toast.error(message);
+        } finally {
+            setIsRedeeming(null);
+        }
+    };
+
+    const handlePendingClaim = async (index: number) => {
+        try {
+            setClaimingIndex(index);
+            await claimPrize(callContract, index);
+            toast.success('Prize claimed');
+            await refreshEvmDrawState(address);
+            if (address) await fetchNFTs(address);
+            await fetchPrizePool();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to claim';
+            toast.error(message);
+        } finally {
+            setClaimingIndex(null);
+        }
+    };
+
     const handleDonate = async (nft: NFT) => {
         if (walletType === 'eth') {
             return;
         }
         try {
-            console.log('Starting donation for NFT:', nft);
             setIsDonating(nft.id);
             setDonationError(null);
             setDonationSuccess(null);
-
-            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
-            const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
-            if (!nftType.startsWith(contractAddress)) {
-                throw new Error('NFT is not from current deployment');
-            }
-
-            const approvedNFT = approvedNFTs.find(
-                approved => (approved.type === nft.type || nft.type.includes(approved.module)) &&
-                    nftType.startsWith(contractAddress)
-            );
-            console.log('Found approved NFT:', approvedNFT);
-
-            if (!approvedNFT) {
-                throw new Error('NFT type not approved for donation or not from current contract');
-            }
-
-            if (!['common', 'rare', 'epic'].includes(approvedNFT.tier)) {
-                throw new Error(`Invalid tier: ${approvedNFT.tier}`);
-            }
-
-            const functionName = `donate_nft_${approvedNFT.tier}`;
-            const typeArg = approvedNFT.type;
-            console.log('Using function:', functionName, 'with type:', typeArg);
-
-            const tx = new Transaction();
-            tx.setSender(address!);
-
-            const resultObject = tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
-                typeArguments: [typeArg],
-                arguments: [
-                    tx.object(SUI_MACHINE_ID), // &mut Machine
-                    tx.object(nft.id)          // The donated NFT of type T
-                ],
+            await donateSuiNft({
+                callContract,
+                suiClient,
+                address: address!,
+                nft,
+                approvedNFTs,
             });
-
-            // Transfer the returned GachaNFT to the user
-            tx.transferObjects([resultObject], tx.pure.address(address!));
-            console.log('Transaction built:', tx);
-
-            // Dry run the transaction
-            console.log('Dry running transaction...');
-            const dryRunResult = await suiClient.dryRunTransactionBlock({
-                transactionBlock: await tx.build({ client: suiClient }),
-            });
-            console.log('Dry run result:', JSON.stringify(dryRunResult, null, 2));
-
-            console.log('Calling contract with:', {
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: `machine::${functionName}`,
-                args: [],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: `machine::${functionName}`,
-                args: [],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            console.log('Raw transaction result:', result);
-
-            // Check if we have a digest, which indicates the transaction was submitted
-            if (result?.digest) {
-                console.log('Transaction submitted successfully with digest:', result.digest);
-                setDonationSuccess(`Successfully donated ${nft.name}`);
-                toast.success(`Successfully donated ${nft.name}`);
-
-                // Wait for transaction to be confirmed
-                await suiClient.waitForTransaction({ digest: result.digest });
-
-                // Refresh all relevant data
-                await Promise.all([
-                    fetchApprovedNFTs(),
-                    fetchPrizePool(),
-                    fetchNFTs(address!)
-                ]);
-                console.log('Data refresh complete');
-            } else {
-                console.log('Transaction failed - no digest returned');
-                throw new Error('Transaction failed - no digest returned');
-            }
+            setDonationSuccess(`Successfully donated ${nft.name}`);
+            toast.success(`Successfully donated ${nft.name}`);
+            await Promise.all([
+                fetchApprovedNFTs(),
+                fetchPrizePool(),
+                fetchNFTs(address!),
+            ]);
         } catch (err) {
             console.error('Donation error:', err);
-            console.error('Error details:', {
-                name: err instanceof Error ? err.name : 'Unknown',
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-            });
             const errorMessage = err instanceof Error ? err.message : 'Failed to donate NFT';
             setDonationError(errorMessage);
             toast.error(errorMessage);
@@ -394,160 +301,46 @@ export function Inventory() {
 
     const handleRedeem = async (capsule: Capsule) => {
         try {
-            console.log('Starting redemption for capsule:', capsule);
             setIsRedeeming(capsule.id);
             setRedeemError(null);
             setRedeemSuccess(null);
 
             if (walletType === 'eth') {
-                if (!address) {
-                    throw new Error('Wallet not connected');
-                }
-                const rarityKey = capsule.id as keyof typeof EVM_RARITY_ID;
-                const rarityId = EVM_RARITY_ID[rarityKey];
-                const nftAddress = EVM_NFT_ADDRESSES[rarityKey.toUpperCase() as keyof typeof EVM_NFT_ADDRESSES];
-                if (rarityId === undefined || !nftAddress) {
-                    throw new Error(`Invalid capsule: ${capsule.id}`);
-                }
-
-                const approved = await isCapsuleApproved(address as `0x${string}`, nftAddress);
-                if (!approved) {
-                    toast.message('Approve the machine to open this capsule');
-                    await callContract({
-                        chain: 'eth',
-                        contractAddress: nftAddress,
-                        method: 'setApprovalForAll',
-                        args: [EVM_MACHINE_ADDRESS, true],
+                if (!address) throw new Error('Wallet not connected');
+                try {
+                    await redeemEvmCapsule({
+                        callContract,
+                        address,
+                        capsuleId: capsule.id,
+                        onRequestId: (requestId) => setRescueRequestId(requestId.toString()),
                     });
+                } catch (err) {
+                    await refreshEvmDrawState(address);
+                    throw err;
                 }
-
-                const before = await getEvmClaimCount(address as `0x${string}`);
-                await callContract({
-                    chain: 'eth',
-                    contractAddress: EVM_MACHINE_ADDRESS,
-                    method: 'play',
-                    args: [BigInt(rarityId)],
-                });
-                toast.message('Draw requested — waiting for Chainlink VRF');
-
-                let claimed = false;
-                for (let i = 0; i < 40; i++) {
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
-                    const count = await getEvmClaimCount(address as `0x${string}`);
-                    if (count > before) {
-                        await callContract({
-                            chain: 'eth',
-                            contractAddress: EVM_MACHINE_ADDRESS,
-                            method: 'claim',
-                            args: [0n],
-                        });
-                        claimed = true;
-                        break;
-                    }
-                }
-
-                if (!claimed) {
-                    throw new Error('Draw is still pending. Open inventory again in a moment to claim.');
-                }
-
                 setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
                 toast.success(`Successfully redeemed ${capsule.name}`);
-                await Promise.all([
-                    fetchPrizePool(),
-                    fetchNFTs(address),
-                ]);
+                await Promise.all([fetchPrizePool(), fetchNFTs(address)]);
                 return;
             }
 
-            // For regular capsules, find the actual NFT to trade
-            const nftToTrade = nfts.find(nft => {
-                const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
-                const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
-                return nft.name.toLowerCase().includes(capsule.id.toLowerCase()) &&
-                    nft.name.toLowerCase().includes('gacha') &&
-                    nftType.startsWith(contractAddress);
+            await redeemSuiCapsule({
+                callContract,
+                address: address!,
+                capsuleId: capsule.id,
+                capsuleName: capsule.name,
+                nfts,
             });
-
-            if (!nftToTrade) {
-                throw new Error('NFT not found or not from current deployment');
-            }
-
-            const tier = capsule.id.toLowerCase();
-            if (!['common', 'rare', 'epic'].includes(tier)) {
-                throw new Error(`Invalid tier: ${tier}`);
-            }
-
-            const functionName = `trade_${tier}`;
-            console.log('Using function:', functionName);
-
-            // Create a transaction
-            const tx = new Transaction();
-            tx.setSender(address!);
-
-            const moveCall = tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::${functionName}`,
-                arguments: [
-                    tx.object(SUI_MACHINE_ID),
-                    tx.object(nftToTrade.id),
-                    tx.object(SUI_RANDOM_ID)
-                ],
-            });
-
-            // Transfer the result to the sender
-            tx.transferObjects([moveCall], tx.pure.address(address!));
-            console.log('Transaction built:', tx);
-
-            console.log('Calling contract with:', {
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: `machine::${functionName}`,
-                args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: `machine::${functionName}`,
-                args: [SUI_MACHINE_ID, nftToTrade.id, SUI_RANDOM_ID],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            console.log('Raw transaction result:', result);
-
-            // Check if we have a digest, which indicates the transaction was submitted
-            if (result?.digest) {
-                console.log('Transaction submitted successfully with digest:', result.digest);
-                setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
-                toast.success(`Successfully redeemed ${capsule.name}`);
-
-                // Wait for transaction to be confirmed
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                // Refresh all relevant data
-                await Promise.all([
-                    fetchApprovedNFTs(),
-                    fetchPrizePool(),
-                    fetchNFTs(address!)
-                ]);
-                console.log('Data refresh complete');
-            } else {
-                console.log('Transaction failed - no digest returned');
-                throw new Error('Transaction failed - no digest returned');
-            }
+            setRedeemSuccess(`Successfully redeemed ${capsule.name}`);
+            toast.success(`Successfully redeemed ${capsule.name}`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await Promise.all([
+                fetchApprovedNFTs(),
+                fetchPrizePool(),
+                fetchNFTs(address!),
+            ]);
         } catch (err) {
             console.error('Redeem error:', err);
-            console.error('Error details:', {
-                name: err instanceof Error ? err.name : 'Unknown',
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-            });
             const errorMessage = err instanceof Error ? err.message : 'Failed to redeem capsule';
             setRedeemError(errorMessage);
             toast.error(errorMessage);
@@ -558,106 +351,11 @@ export function Inventory() {
 
     const handleUnwrap = async (prize: NFT) => {
         try {
-            console.log('Starting unwrap for prize:', prize);
             setIsRedeeming(prize.id);
             setRedeemError(null);
             setRedeemSuccess(null);
-
-            // Show message that unwrapping is not supported
             throw new Error('Unwrapping prizes is not currently supported. Please check back later.');
-
-            // Rest of the function is commented out since it's not supported
-            /*
-            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
-            const nftType = prize.type.startsWith('0x') ? prize.type.slice(2) : prize.type;
-            if (!nftType.startsWith(contractAddress)) {
-                throw new Error('Prize is not from current deployment');
-            }
-
-            const obj = await suiClient.getObject({
-                id: prize.id,
-                options: { showType: true, showOwner: true }
-            });
-            
-            console.log('Prize owner:', obj.data?.owner);
-            
-            // You can check if it's still in the expected bag
-            if (
-                !obj.data ||
-                typeof obj.data.owner !== 'object' ||
-                obj?.data?.owner?.ObjectOwner !== address
-            ) {
-                throw new Error("Prize is not owned by you or is no longer valid.");
-            }
-
-            // Create a transaction
-            const tx = new Transaction();
-            tx.setSender(address!);
-
-            const moveCall = tx.moveCall({
-                target: `${SUI_CONTRACT_ADDRESS}::machine::consume_prize`,
-                typeArguments: [prize.type],
-                arguments: [
-                    tx.object(prize.id)
-                ],
-            });
-
-            // Transfer the result to the sender
-            tx.transferObjects([moveCall], tx.pure.address(address!));
-            console.log('Transaction built:', tx);
-
-            console.log('Calling contract with:', {
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::consume_prize',
-                args: [prize.id],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'machine::consume_prize',
-                args: [prize.id],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            console.log('Raw transaction result:', result);
-
-            // Check if we have a digest, which indicates the transaction was submitted
-            if (result?.digest) {
-                console.log('Transaction submitted successfully with digest:', result.digest);
-                setRedeemSuccess(`Successfully unwrapped ${prize.name}`);
-                toast.success(`Successfully unwrapped ${prize.name}`);
-
-                // Wait for transaction to be confirmed
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                // Refresh all relevant data
-                await Promise.all([
-                    fetchApprovedNFTs(),
-                    fetchPrizePool(),
-                    fetchNFTs(address!)
-                ]);
-                console.log('Data refresh complete');
-            } else {
-                console.log('Transaction failed - no digest returned');
-                throw new Error('Transaction failed - no digest returned');
-            }
-            */
         } catch (err) {
-            console.error('Unwrap error:', err);
-            console.error('Error details:', {
-                name: err instanceof Error ? err.name : 'Unknown',
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-            });
             const errorMessage = err instanceof Error ? err.message : 'Failed to unwrap prize';
             setRedeemError(errorMessage);
             toast.error(errorMessage);
@@ -668,79 +366,24 @@ export function Inventory() {
 
     const handleBurn = async (nft: NFT) => {
         try {
-            console.log('Starting burn for NFT:', nft);
             setIsDonating(nft.id);
             setDonationError(null);
             setDonationSuccess(null);
-
-            const contractAddress = SUI_CONTRACT_ADDRESS.startsWith('0x') ? SUI_CONTRACT_ADDRESS.slice(2) : SUI_CONTRACT_ADDRESS;
-            const nftType = nft.type.startsWith('0x') ? nft.type.slice(2) : nft.type;
-            if (!nftType.startsWith(contractAddress)) {
-                throw new Error('NFT is not from current deployment');
-            }
-
-            // Create a transaction
-            const tx = new Transaction();
-            tx.setSender(address!);
-
-            // Transfer the NFT directly to the zero address
-            tx.transferObjects(
-                [tx.object(nft.id)],
-                tx.pure.address('0x0000000000000000000000000000000000000000000000000000000000000000')
-            );
-            console.log('Transaction built:', tx);
-
-            console.log('Calling contract with:', {
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'transferObjects',
-                args: [nft.id, '0x0000000000000000000000000000000000000000000000000000000000000000'],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
+            await burnSuiNft({
+                callContract,
+                suiClient,
+                address: address!,
+                nft,
             });
-
-            const result = await callContract({
-                chain: 'sui',
-                contractAddress: SUI_CONTRACT_ADDRESS,
-                method: 'transferObjects',
-                args: [nft.id, '0x0000000000000000000000000000000000000000000000000000000000000000'],
-                options: {
-                    transaction: tx,
-                    gasBudget: 100000000
-                }
-            });
-
-            console.log('Raw transaction result:', result);
-
-            // Check if we have a digest, which indicates the transaction was submitted
-            if (result?.digest) {
-                console.log('Transaction submitted successfully with digest:', result.digest);
-                setDonationSuccess(`Successfully burned ${nft.name}`);
-                toast.success(`Successfully burned ${nft.name}`);
-
-                // Wait for transaction to be confirmed
-                await suiClient.waitForTransaction({ digest: result.digest });
-
-                // Refresh all relevant data
-                await Promise.all([
-                    fetchApprovedNFTs(),
-                    fetchPrizePool(),
-                    fetchNFTs(address!)
-                ]);
-                console.log('Data refresh complete');
-            } else {
-                console.log('Transaction failed - no digest returned');
-                throw new Error('Transaction failed - no digest returned');
-            }
+            setDonationSuccess(`Successfully burned ${nft.name}`);
+            toast.success(`Successfully burned ${nft.name}`);
+            await Promise.all([
+                fetchApprovedNFTs(),
+                fetchPrizePool(),
+                fetchNFTs(address!),
+            ]);
         } catch (err) {
             console.error('Burn error:', err);
-            console.error('Error details:', {
-                name: err instanceof Error ? err.name : 'Unknown',
-                message: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-            });
             const errorMessage = err instanceof Error ? err.message : 'Failed to burn NFT';
             setDonationError(errorMessage);
             toast.error(errorMessage);
@@ -791,6 +434,22 @@ export function Inventory() {
                     Other NFTs
                 </button>
             </div>
+
+            {walletType === 'eth' && (
+                <div className="mt-4 space-y-4">
+                    <PendingClaimsPanel
+                        claims={pendingClaims}
+                        onClaim={handlePendingClaim}
+                        claimingIndex={claimingIndex}
+                    />
+                    <RescueStuckDrawForm
+                        requestId={rescueRequestId}
+                        onRequestIdChange={setRescueRequestId}
+                        onRescue={handleRescueStuckDraw}
+                        disabled={isRedeeming === 'rescue'}
+                    />
+                </div>
+            )}
 
             {/* Content */}
             <div className="mt-4">
