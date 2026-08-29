@@ -2,19 +2,15 @@ import type { CSSProperties } from "react"
 import starA from "../star_a.svg?raw"
 import starB from "../star_b.svg?raw"
 import starC from "../star_c.svg?raw"
+import { FLASH_S, SPARKLE_CYCLE_S, type SparkleVariant } from "../lib/sparkle-timing"
+
+export { FLASH_S, SPARKLE_CYCLE_S, type SparkleVariant }
 
 const STAR_SVG = {
   a: starA,
   b: starB,
   c: starC,
-} as const
-
-export type SparkleVariant = keyof typeof STAR_SVG
-
-/** Original SMIL flash length in the star SVGs. */
-export const FLASH_S = 1.04
-/** Full loop: flash, then idle so capsules do not shimmer. */
-export const SPARKLE_CYCLE_S = 4.2
+} as const satisfies Record<SparkleVariant, string>
 
 /** Play the packed SMIL once, then stop. */
 export function svgPlayOnce(markup: string): string {

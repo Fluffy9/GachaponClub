@@ -61,6 +61,7 @@ import {
     SetVrfConfigForm,
     WithdrawPrizeForm,
 } from "../components/machine-ops"
+import { CapsuleMetadataPanel } from "../components/capsule-metadata-panel"
 
 const container = {
     hidden: { opacity: 0, y: 20 },
@@ -558,6 +559,8 @@ export default function Admin() {
                             </div>
                         </div>
                     </div>
+
+                    <CapsuleMetadataPanel />
 
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Approved NFTs Overview</h2>

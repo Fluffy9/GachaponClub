@@ -414,9 +414,63 @@ a {
   color: var(--sticker-hint);
 }
 
+/* Question mark scales with capsule width, not page viewport (matches homepage ratios). */
+[data-capsule-art] {
+  container-type: inline-size;
+  container-name: capsule;
+}
+
+.capsule-question-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 33.333%;
+  height: 33.333%;
+}
+
+.capsule-question {
+  font-family: "Press Start 2P", "Courier New", monospace !important;
+  line-height: 1 !important;
+  font-size: 1.25rem;
+  color: #666;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+}
+
+@container capsule (min-width: 7rem) {
+  .capsule-question-wrap {
+    width: 35.714%;
+    height: 35.714%;
+  }
+
+  .capsule-question {
+    font-size: 1.5rem;
+  }
+}
+
+@container capsule (min-width: 8rem) {
+  .capsule-question-wrap {
+    width: 37.5%;
+    height: 37.5%;
+  }
+
+  .capsule-question {
+    font-size: 1.875rem;
+  }
+}
+
+.dark .capsule-question {
+  color: #999;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+}
+
+.price-sticker .capsule-question {
+  font-family: "Press Start 2P", "Courier New", monospace !important;
+  line-height: 1 !important;
+}
+
 /* Pixel art question mark */
 .pixel-question {
-  font-family: "Press Start 2P", "Courier New", monospace;
+  font-family: "Press Start 2P", "Courier New", monospace !important;
   font-size: 1.5rem;
   line-height: 1;
   color: #666;
