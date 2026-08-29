@@ -1,3 +1,7 @@
+/**
+ * Sui machine reads: approved collections, prize bags, owned NFTs, and capsule prices.
+ * WalletProvider maps these into React state; EVM reads live in `lib/evm.ts`.
+ */
 import { SuiClient } from '@mysten/sui/client'
 import type { SuiObjectResponse } from '@mysten/sui/client'
 import { NETWORK, SUI_MACHINE_ID, SUI_CONTRACT_ADDRESS, getImageUrl } from './constants'

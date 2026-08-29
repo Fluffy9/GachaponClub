@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SPARKLE_CYCLE_S, svgWithPacing } from '../components/pixel-sparkle'
+import { SPARKLE_CYCLE_S, svgPlayOnce, svgWithPacing } from '../components/pixel-sparkle'
 
 const SAMPLE = `
 <g opacity="0">
@@ -20,5 +20,12 @@ describe('pixel sparkle pacing', () => {
     expect(out).toContain('values="1;0;0;0"')
     expect(out).toMatch(/keyTimes="0\.000000;/)
     expect(out).toContain(';1"')
+  })
+
+  it('plays SMIL once instead of looping', () => {
+    const out = svgPlayOnce('fill="#FFFFFF" repeatCount="indefinite"')
+    expect(out).toContain('fill="currentColor"')
+    expect(out).toContain('repeatCount="1"')
+    expect(out).not.toContain('repeatCount="indefinite"')
   })
 })

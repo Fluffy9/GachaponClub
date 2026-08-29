@@ -1,3 +1,7 @@
+/**
+ * Player inventory writes: EVM donate / play / claim / rescue, plus Sui donate / trade / burn.
+ * UI keeps toast and loading state; this module only builds and sends the transactions.
+ */
 import { Transaction } from '@mysten/sui/transactions'
 import type { SuiClient } from '@mysten/sui/client'
 import { isAddress, type Address } from 'viem'

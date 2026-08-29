@@ -23,6 +23,7 @@ import { WalletProvider } from './components/providers/wallet-provider';
 import { AdminNav } from './components/admin-nav';
 import { BASE_RPC_URL, WALLETCONNECT_PROJECT_ID } from './lib/constants';
 import { Toaster } from 'sonner';
+import { ClickSparkles } from './components/click-sparkles';
 
 const config = getDefaultConfig({
   appName: 'Gachapon Club',
@@ -69,6 +70,7 @@ export default function App() {
                       </div>
                     </div>
                     <Toaster position="top-right" richColors />
+                    <ClickSparkles />
                   </Router>
                 </PopupProvider>
               </WalletProvider>

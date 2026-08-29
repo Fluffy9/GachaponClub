@@ -1,3 +1,7 @@
+/**
+ * Exact `writeContract` payloads for every GachaMachine function the app calls.
+ * Home / inventory / Admin should go through these builders so ABI args stay in one place.
+ */
 import { type Address, type Hex, parseEventLogs, type Log } from 'viem'
 import { EVM_MACHINE_ADDRESS } from './constants'
 import { MACHINE_ABI } from './evm'

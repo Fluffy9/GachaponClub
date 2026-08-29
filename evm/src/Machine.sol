@@ -21,11 +21,13 @@ interface IGachaNFT {
 
 /**
  * @title GachaMachine
- * @dev Capsule machine: buy or donate for a capsule, burn it for a VRF draw,
- *      then claim. The eligible bag length is snapshotted at play so later
- *      donations cannot steer `random % n` after the VRF word is public.
- *      ADMIN_ROLE holds the bags. ECONOMIST_ROLE can reprice, toggle rarities,
- *      and pause without withdraw access.
+ * @notice Capsule machine on Base: buy or donate for a ticket, burn it for a
+ *         Chainlink VRF draw, then claim the prize (or a capsule refund).
+ * @dev Eligible bag length is snapshotted at `play` so later donations cannot
+ *      steer `random % n` after the VRF word is public. Donate into a bag is
+ *      also blocked while that bag has a pending draw. ADMIN_ROLE holds the
+ *      bags (hot wallet). ECONOMIST_ROLE can reprice, toggle rarities, and
+ *      pause without withdraw access. The VRF coordinator address is immutable.
  */
 contract GachaMachine is
     AccessControl,
@@ -122,18 +124,21 @@ contract GachaMachine is
     event VRFSubscriptionCanceled(uint256 indexed subscriptionId, address indexed to);
     event VRFSubscriptionCreated(uint256 indexed subscriptionId);
 
+    /// @notice Operator role: bags, VRF, approvals, admin prize pulls, rescue.
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     /// @dev Prices, rarity enable, pause/unpause. Cannot withdraw or approve collections.
     bytes32 public constant ECONOMIST_ROLE = keccak256("ECONOMIST_ROLE");
 
     /// @dev Capsule ERC1155 id on every per-rarity GachaNFT.
     uint256 public constant CAPSULE_ID = 0;
+    /// @notice Default wait before a player (not admin) may `rescueStuckDraw`.
     uint256 public constant DEFAULT_RESCUE_DELAY = 1 days;
     uint8 public constant TOKEN_ERC721 = 1;
     uint8 public constant TOKEN_ERC1155 = 2;
 
     error OnlyCoordinatorCanFulfill(address have, address want);
 
+    /// @notice One capsule ERC-1155 plus its list price and enable flag.
     struct RarityInfo {
         address tokenContract;
         string name;
@@ -141,6 +146,7 @@ contract GachaMachine is
         bool enabled;
     }
 
+    /// @notice One prize slot in a rarity bag. ERC-1155 `amount` is still one slot.
     struct PrizeInfo {
         address tokenContract;
         uint256 tokenId;
@@ -148,6 +154,7 @@ contract GachaMachine is
         bool isERC721;
     }
 
+    /// @notice Chainlink VRF v2.5 settings. `coordinator` cannot change after deploy.
     struct VRFConfig {
         address coordinator;
         bytes32 keyHash;
@@ -180,7 +187,9 @@ contract GachaMachine is
     }
 
     RarityInfo[] public rarities;
+    /// @dev Maps capsule token → rarityId + 1 so 0 means unregistered.
     mapping(address => uint256) private _tokenToRarityPlusOne;
+    /// @notice Prize bag per rarity. Swap-and-pop on draw / admin pull.
     mapping(uint256 => PrizeInfo[]) public prizes;
 
     /// @dev Collection approved independently for each rarity bag.
@@ -188,9 +197,12 @@ contract GachaMachine is
     /// @dev 0 unset, 1 ERC721, 2 ERC1155. Frozen on first `approveNFT`.
     mapping(address => uint8) public tokenStandard;
 
+    /// @notice Frozen at deploy. `setVRFConfig` cannot point at another coordinator.
     address public immutable vrfCoordinator;
     VRFConfig public vrfConfig;
+    /// @notice In-flight or fulfilled VRF draws, keyed by Chainlink request id.
     mapping(uint256 => Draw) public draws;
+    /// @notice Unfulfilled plays per rarity. Those bag slots are reserved.
     mapping(uint256 => uint256) public pendingDraws;
     mapping(address => PrizeClaim[]) private _claims;
 
@@ -198,7 +210,9 @@ contract GachaMachine is
     mapping(address => mapping(uint256 => uint256)) public reserved1155;
     mapping(address => mapping(uint256 => bool)) public reserved721;
 
+    /// @notice Seconds a player must wait after `play` before they can rescue.
     uint256 public rescueDelay;
+    /// @notice Two-step admin handover. Zero when no transfer is pending.
     address public pendingAdmin;
     address public adminTransferFrom;
 
@@ -211,6 +225,7 @@ contract GachaMachine is
 
     PendingDonation private _pendingDonation;
 
+    /// @notice Deploys, grants admin to the sender, and opens a VRF sub if `subscriptionId` is 0.
     constructor(VRFConfig memory config) {
         require(config.coordinator != address(0), "VRF not configured");
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -229,6 +244,7 @@ contract GachaMachine is
         _setVRFConfig(config);
     }
 
+    /// @notice Anyone may top up the machine-owned VRF subscription with native ETH.
     function fundVrf() external payable {
         require(msg.value > 0, "No value");
         require(vrfConfig.subscriptionId != 0, "No subscription");
@@ -274,6 +290,7 @@ contract GachaMachine is
         return super.supportsInterface(interfaceId);
     }
 
+    /// @notice Accepts an ERC-1155 only as part of `donateNFT`. Direct transfers revert.
     function onERC1155Received(
         address,
         address from,
@@ -291,6 +308,7 @@ contract GachaMachine is
         return super.onERC1155Received(msg.sender, from, id, value, data);
     }
 
+    /// @notice Batch ERC-1155 transfers are never accepted.
     function onERC1155BatchReceived(
         address,
         address,
@@ -301,6 +319,7 @@ contract GachaMachine is
         revert("Direct transfer disabled");
     }
 
+    /// @notice Accepts an ERC-721 only as part of `donateNFT`. Direct transfers revert.
     function onERC721Received(
         address,
         address from,
@@ -316,6 +335,7 @@ contract GachaMachine is
         return this.onERC721Received.selector;
     }
 
+    /// @dev Economist or admin. Used for pause and pricing, not bag custody.
     modifier onlyEconomist() {
         require(
             hasRole(ECONOMIST_ROLE, msg.sender) ||
@@ -325,20 +345,24 @@ contract GachaMachine is
         _;
     }
 
+    /// @notice Pause buy, play, and donate. Claim and rescue stay available.
     function pause() external onlyEconomist {
         _pause();
     }
 
+    /// @notice Resume buy, play, and donate.
     function unpause() external onlyEconomist {
         _unpause();
     }
 
+    /// @notice Seconds a non-admin player must wait before `rescueStuckDraw`.
     function setRescueDelay(uint256 delay) external onlyRole(ADMIN_ROLE) {
         require(delay > 0, "Invalid delay");
         rescueDelay = delay;
         emit RescueDelayUpdated(delay);
     }
 
+    /// @notice Register a new capsule ERC-1155 and start a prize bag for it.
     function registerRarity(
         address tokenContract,
         string memory name,
@@ -366,6 +390,7 @@ contract GachaMachine is
         emit RarityRegistered(rarityId, tokenContract, name, price);
     }
 
+    /// @notice Lookup which rarity bag a capsule token belongs to.
     function getTokenRarity(
         address tokenContract
     ) public view returns (bool registered, uint256 rarityId) {
@@ -374,6 +399,7 @@ contract GachaMachine is
         rarityId = registered ? stored - 1 : 0;
     }
 
+    /// @notice Buy one capsule. `msg.value` must equal the on-chain price exactly.
     function purchase(
         uint256 rarityId
     ) external payable nonReentrant whenNotPaused {
@@ -387,6 +413,7 @@ contract GachaMachine is
         emit CapsulePurchased(msg.sender, rarityId, rarity.price, msg.value);
     }
 
+    /// @notice Update VRF key hash / gas / sub id. Coordinator is locked. Reverts if any draw is pending.
     function setVRFConfig(
         VRFConfig calldata config
     ) external onlyRole(ADMIN_ROLE) {
@@ -394,6 +421,8 @@ contract GachaMachine is
         _setVRFConfig(config);
     }
 
+    /// @notice Burn one capsule and request a VRF word. Prize is queued for `claim` after fulfill.
+    /// @return requestId Chainlink request id (use this for `rescueStuckDraw` if VRF never returns).
     function play(
         uint256 rarityId
     ) external nonReentrant whenNotPaused returns (uint256 requestId) {
@@ -437,6 +466,7 @@ contract GachaMachine is
         emit PlayRequested(requestId, msg.sender, rarityId);
     }
 
+    /// @notice Chainlink VRF callback. Anyone else reverts. Empty words refund a capsule.
     function rawFulfillRandomWords(
         uint256 requestId,
         uint256[] calldata randomWords
@@ -474,6 +504,7 @@ contract GachaMachine is
         emit DrawRescued(requestId, draw.player, draw.rarityId);
     }
 
+    /// @notice Pull a queued prize (or refunded capsule). Swap-and-pop; claiming 0 repeatedly drains the queue.
     function claim(uint256 index) external nonReentrant {
         PrizeClaim[] storage userClaims = _claims[msg.sender];
         require(index < userClaims.length, "Invalid claim");
@@ -502,10 +533,12 @@ contract GachaMachine is
         );
     }
 
+    /// @notice Number of unclaimed prizes / refunds for `player`.
     function getClaimCount(address player) external view returns (uint256) {
         return _claims[player].length;
     }
 
+    /// @notice Inspect a queued claim. `tokenContract == address(0)` is a capsule refund (`tokenId` = rarity).
     function getClaim(
         address player,
         uint256 index
@@ -514,6 +547,7 @@ contract GachaMachine is
         return _claims[player][index];
     }
 
+    /// @notice Bag length minus in-flight draws. This is how many plays can still start.
     function getAvailablePrizeCount(
         uint256 rarityId
     ) public view returns (uint256) {
@@ -523,6 +557,7 @@ contract GachaMachine is
         return n > pending ? n - pending : 0;
     }
 
+    /// @notice Whether `tokenContract` may be donated into this rarity bag.
     function isApprovedForRarity(
         address tokenContract,
         uint256 rarityId
@@ -530,10 +565,12 @@ contract GachaMachine is
         return approvedForRarity[tokenContract][rarityId];
     }
 
+    /// @notice Number of registered rarities (three on the live Base machine).
     function getRarityCount() public view returns (uint256) {
         return rarities.length;
     }
 
+    /// @notice Capsule token, name, price, and enabled flag for `rarityId`.
     function getRarityInfo(
         uint256 rarityId
     ) public view returns (RarityInfo memory) {
@@ -541,6 +578,7 @@ contract GachaMachine is
         return rarities[rarityId];
     }
 
+    /// @notice Set capsule price in wei. Must be > 0. Economist or admin.
     function setRarityPrice(
         uint256 rarityId,
         uint256 price
@@ -555,6 +593,7 @@ contract GachaMachine is
         emit RarityPriceUpdated(rarityId, price);
     }
 
+    /// @notice Enable or disable buying / donating / playing this rarity.
     function setRarityEnabled(
         uint256 rarityId,
         bool enabled
@@ -715,11 +754,13 @@ contract GachaMachine is
         );
     }
 
+    /// @notice Raw bag length, including slots reserved by pending draws.
     function getPrizeCount(uint256 rarityId) public view returns (uint256) {
         require(rarityId < rarities.length, "Invalid rarity ID");
         return prizes[rarityId].length;
     }
 
+    /// @notice Prize sitting at `index` in the bag (not a pending claim).
     function getPrizeInfo(
         uint256 rarityId,
         uint256 index
@@ -729,6 +770,7 @@ contract GachaMachine is
         return prizes[rarityId][index];
     }
 
+    /// @notice Admin LIFO pull of the last bag slot. Instant; this is a hot wallet.
     function redeemPrize(
         uint256 rarityId,
         address to
@@ -760,6 +802,7 @@ contract GachaMachine is
         );
     }
 
+    /// @notice Withdraw ETH (`token == address(0)`) or ERC-20 from the machine treasury.
     function withdraw(
         address token,
         uint256 amount,
@@ -832,6 +875,7 @@ contract GachaMachine is
         );
     }
 
+    /// @notice Start two-step handover of DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
     function transferAdmin(
         address newAdmin
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -842,6 +886,7 @@ contract GachaMachine is
         emit AdminTransferStarted(msg.sender, newAdmin);
     }
 
+    /// @notice Pending admin accepts. Old admin loses both admin roles.
     function acceptAdmin() external {
         require(msg.sender == pendingAdmin, "Not pending admin");
         address from = adminTransferFrom;
@@ -856,6 +901,7 @@ contract GachaMachine is
         emit AdminChanged(from, msg.sender);
     }
 
+    /// @notice Current default admin aborts a pending handover.
     function cancelAdminTransfer() external onlyRole(DEFAULT_ADMIN_ROLE) {
         pendingAdmin = address(0);
         adminTransferFrom = address(0);
@@ -884,6 +930,7 @@ contract GachaMachine is
         );
     }
 
+    /// @dev VRF fulfill: pick `word % min(snapshot, current length)`, reserve, queue claim.
     function _fulfillRandomWords(
         uint256 requestId,
         uint256[] calldata randomWords
@@ -934,6 +981,7 @@ contract GachaMachine is
         );
     }
 
+    /// @dev Refund path: queue a capsule remint (`tokenContract == 0`, `tokenId` = rarity).
     function _queueCapsuleRefund(
         uint256 requestId,
         address player,

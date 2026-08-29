@@ -1,8 +1,6 @@
 "use client"
 
-import { Navigation } from "../components/navigation"
 import { ThemeToggle } from "../components/theme-toggle"
-import { WinnerBanner } from "../components/winner-banner"
 import { FAQ } from "../components/faq"
 import { LabelStickers, MobileLabelCredits } from "../components/label-stickers"
 import { CapsuleShopRow } from "../components/capsule-column"
@@ -50,23 +48,15 @@ export default function Home() {
 
     return (
         <main className="relative min-h-screen flex flex-col items-center bg-pattern">
-            <motion.div
-                variants={fadeInLeft}
-                initial="hidden"
-                animate="show"
-                className="absolute right-4 top-4 z-20 md:right-6"
-            >
-                <ThemeToggle />
-            </motion.div>
-            <div className="w-full max-w-6xl px-4 pb-12 pt-8">
-                <div className="relative mb-8 flex flex-col items-center">
+            <div className="w-full max-w-6xl px-4 py-6 pb-12">
+                <div className="relative mb-8 flex flex-col items-center pt-10 md:pt-14">
                     <motion.div
-                        variants={fadeInUp}
+                        variants={fadeInLeft}
                         initial="hidden"
                         animate="show"
-                        className="-mb-6 md:-mb-10"
+                        className="absolute right-0 top-0 z-20 md:right-4"
                     >
-                        <WinnerBanner />
+                        <ThemeToggle />
                     </motion.div>
                     <motion.div
                         variants={scaleIn}
@@ -83,15 +73,6 @@ export default function Home() {
                         />
                     </motion.div>
                 </div>
-
-                <motion.div
-                    variants={fadeInUp}
-                    initial="hidden"
-                    animate="show"
-                    transition={{ delay: 0.2 }}
-                >
-                    <Navigation />
-                </motion.div>
 
                 <CapsuleShopRow
                     isConnected={shop.isConnected}

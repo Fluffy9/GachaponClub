@@ -4,7 +4,6 @@ import { useWallet } from "../components/providers/wallet-provider"
 import { useState, useEffect, useCallback } from "react"
 import { motion } from "framer-motion"
 import { ThemeToggle } from "../components/theme-toggle"
-import { Navigation } from "../components/navigation"
 import { WalletPopup } from "../components/wallet-popup"
 import { usePopup } from "../components/ui/popup-provider"
 import {
@@ -488,7 +487,6 @@ export default function Admin() {
                         Admin Dashboard
                     </motion.h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Base mainnet</p>
-                    <Navigation />
                 </div>
 
                 <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">

@@ -3,13 +3,10 @@
 import { useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import {
-  BASE_EXPLORER_URL,
-  EVM_MACHINE_ADDRESS,
-  EVM_NFT_ADDRESSES,
-  EXPLORER_URL,
-  SUI_CONTRACT_ADDRESS,
-  SUI_MACHINE_ID,
-} from "../lib/constants"
+  CONTRACT_LINKS,
+  CONTRACTS_QUESTION,
+  FAQ_TEXT_ITEMS,
+} from "../lib/faq-content"
 
 interface FAQItem {
   question: string
@@ -41,81 +38,27 @@ function AddressRow({
 }
 
 const faqItems: FAQItem[] = [
+  ...FAQ_TEXT_ITEMS.map((item) => ({
+    question: item.question,
+    answer: item.answer,
+  })),
   {
-    question: "What is Gachapon Club?",
-    answer:
-      "Gachapon Club is the most degen DeFi NFT launchpad disguised as a capsule toy simulator 😁",
-  },
-  {
-    question: "How do the different capsule types work?",
-    answer:
-      "As of right now, there are 3 capsules: Common (light blue), Rare (pink), and Epic (pastel gold). Select the capsule and complete the purchase to receive a Gachapon Club Capsule NFT. Each tier allows you to win rarer and more valuable NFT collectibles.",
-  },
-  {
-    question: "Can I sell my capsule?",
-    answer: "Yes. Capsule NFTs are 1155 semi-fungible tokens so a liquidity pool can be created for them.",
-  },
-  {
-    question: "Can I donate my NFT?",
-    answer: "Yes, if the NFT is in an approved collection for a particular tier. You will receive one capsule of that same tier.",
-  },
-  {
-    question: "How do I open a capsule?",
-    answer:
-      "After purchasing your capsule, click on it inside your inventory to open it! Be certain that you want to open it, as this cannot be undone. When you open, you will receive a random prize from the tier of the capsule you opened. New donations are not accepted until the draw finishes.",
-  },
-  {
-    question: "How do prize tiers work? (Technically)",
-    answer: "Each capsule tier (common, rare, epic at this time) has a number of NFT collections that are possible prizes. The machine will randomly select one of the NFTs in the tier to be the prize.",
-  },
-  {
-    question: "Tokenomics / Technical implications?",
-    answer: "A capsule represents an equal probability of winning any of the NFTs in the tier of the capsule you opened. The machine will randomly select one of the NFTs in the tier to be the prize (at the time of opening). This will pause donations for that tier until the draw finishes. Capsule mint prices may be adjusted in real time based on market factors. Prizes may be added or removed to maintain a balanced distribution.",
-  },
-  {
-    question: "Roadmap?",
-    answer: "For the immediate future, the goal is to maintain a balanced distribution of NFTs and test out different economic mechanisms in the hopes of launching a sustainable DAO-owned project. ",
-  },
-  {
-    question: "Contract addresses?",
+    question: CONTRACTS_QUESTION,
     answer: (
       <div className="space-y-3">
-        <div className="space-y-1">
-          <p className="mb-1 font-bold">Base</p>
-          <AddressRow
-            label="Machine"
-            address={EVM_MACHINE_ADDRESS}
-            href={`${BASE_EXPLORER_URL}/address/${EVM_MACHINE_ADDRESS}`}
-          />
-          <AddressRow
-            label="Common capsule"
-            address={EVM_NFT_ADDRESSES.COMMON}
-            href={`${BASE_EXPLORER_URL}/address/${EVM_NFT_ADDRESSES.COMMON}`}
-          />
-          <AddressRow
-            label="Rare capsule"
-            address={EVM_NFT_ADDRESSES.RARE}
-            href={`${BASE_EXPLORER_URL}/address/${EVM_NFT_ADDRESSES.RARE}`}
-          />
-          <AddressRow
-            label="Epic capsule"
-            address={EVM_NFT_ADDRESSES.EPIC}
-            href={`${BASE_EXPLORER_URL}/address/${EVM_NFT_ADDRESSES.EPIC}`}
-          />
-        </div>
-        <div className="space-y-1">
-          <p className="mb-1 font-bold">Sui</p>
-          <AddressRow
-            label="Package"
-            address={SUI_CONTRACT_ADDRESS}
-            href={`${EXPLORER_URL}package/${SUI_CONTRACT_ADDRESS}`}
-          />
-          <AddressRow
-            label="Machine"
-            address={SUI_MACHINE_ID}
-            href={`${EXPLORER_URL}object/${SUI_MACHINE_ID}`}
-          />
-        </div>
+        {(['Base', 'Sui'] as const).map((chain) => (
+          <div key={chain} className="space-y-1">
+            <p className="mb-1 font-bold">{chain}</p>
+            {CONTRACT_LINKS.filter((link) => link.chain === chain).map((link) => (
+              <AddressRow
+                key={`${link.chain}-${link.label}`}
+                label={link.label}
+                address={link.address}
+                href={link.href}
+              />
+            ))}
+          </div>
+        ))}
       </div>
     ),
   },

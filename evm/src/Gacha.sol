@@ -7,20 +7,26 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title GachaNFT
- * @dev One capsule collection per rarity. The machine mints and burns token id 0.
- *      Extra ids can be added by the admin; they are unused by GachaMachine.
+ * @notice One ERC-1155 capsule collection per machine rarity (common / rare / epic).
+ * @dev The machine mints and burns token id 0 (`CAPSULE_ID`). Extra ids can be
+ *      added by the collection admin; GachaMachine never uses them.
  */
 contract GachaNFT is ERC1155Burnable, AccessControl {
     event CapsuleMinted(address indexed to, uint256 rarityId, uint256 amount);
     event RarityAdded(uint256 indexed rarityId);
 
+    /// @notice Role the machine holds so it can mint and burn capsules.
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
+    /// @notice Token id used for every capsule this collection issues.
     uint256 public constant CAPSULE_ID = 0;
 
+    /// @notice Whether `rarityId` has been registered on this collection.
     mapping(uint256 => bool) public rarityExists;
+    /// @notice Whether minting is allowed for `rarityId` (id 0 starts enabled).
     mapping(uint256 => bool) public enabledRarities;
 
+    /// @notice Deploys with metadata URI `https://gachapon.club/api/rarity/{id}.json`.
     constructor() ERC1155("https://gachapon.club/api/rarity/{id}.json") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
@@ -33,6 +39,7 @@ contract GachaNFT is ERC1155Burnable, AccessControl {
         return super.supportsInterface(interfaceId);
     }
 
+    /// @notice Register an extra token id. Unused by the machine.
     function addRarity(
         uint256 rarityId
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -46,6 +53,7 @@ contract GachaNFT is ERC1155Burnable, AccessControl {
         emit RarityAdded(rarityId);
     }
 
+    /// @notice Mint capsules. Only the machine (or another minter) may call this.
     function mint(
         address to,
         uint256 rarityId,
@@ -56,6 +64,7 @@ contract GachaNFT is ERC1155Burnable, AccessControl {
         emit CapsuleMinted(to, rarityId, amount);
     }
 
+    /// @notice Batch mint. Lengths must match; each id must be enabled.
     function mintBatch(
         address to,
         uint256[] calldata rarityIds,
@@ -74,6 +83,7 @@ contract GachaNFT is ERC1155Burnable, AccessControl {
         }
     }
 
+    /// @notice Pause or resume minting for a registered token id.
     function setRarityEnabled(
         uint256 rarityId,
         bool enabled

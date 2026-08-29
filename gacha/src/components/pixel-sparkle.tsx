@@ -12,9 +12,18 @@ const STAR_SVG = {
 export type SparkleVariant = keyof typeof STAR_SVG
 
 /** Original SMIL flash length in the star SVGs. */
-const FLASH_S = 1.04
+export const FLASH_S = 1.04
 /** Full loop: flash, then idle so capsules do not shimmer. */
 export const SPARKLE_CYCLE_S = 4.2
+
+/** Play the packed SMIL once, then stop. */
+export function svgPlayOnce(markup: string): string {
+  return markup
+    .replaceAll('fill="#FFFFFF"', 'fill="currentColor"')
+    .replaceAll('repeatCount="indefinite"', 'repeatCount="1"')
+}
+
+export const STAR_ONCE_SVG = svgPlayOnce(starA)
 
 export function svgWithPacing(markup: string, delay: number) {
   const scale = FLASH_S / SPARKLE_CYCLE_S

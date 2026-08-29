@@ -1,6 +1,5 @@
 import { motion } from "framer-motion"
 import { ThemeToggle } from "../components/theme-toggle"
-import { Navigation } from "../components/navigation"
 import { GachaCapsule } from "../components/gacha-capsule"
 import { Link } from "react-router-dom"
 import { useEffect } from "react"
@@ -53,16 +52,6 @@ export default function NotFound() {
                         />
                     </motion.div>
                 </div>
-
-                {/* Navigation */}
-                <motion.div
-                    variants={item}
-                    initial="hidden"
-                    animate="show"
-                    transition={{ delay: 0.2 }}
-                >
-                    <Navigation />
-                </motion.div>
 
                 {/* 404 Content */}
                 <motion.div

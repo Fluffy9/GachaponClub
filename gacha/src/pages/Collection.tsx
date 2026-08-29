@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Variants } from "framer-motion"
 import { GachaCapsule } from "../components/gacha-capsule"
-import { Navigation } from "../components/navigation"
 import { ThemeToggle } from "../components/theme-toggle"
 import { getImageUrl } from '../lib/constants';
 
@@ -284,18 +283,8 @@ export default function Collection() {
                     </motion.div>
                 </div>
 
-                {/* Navigation */}
-                <motion.div
-                    variants={fadeInUp}
-                    initial="hidden"
-                    animate="show"
-                    transition={{ delay: 0.2 }}
-                >
-                    <Navigation />
-                </motion.div>
-
                 {/* Main Content - Capsule Collection */}
-                <div className="mt-16 mb-20">
+                <div className="mt-8 mb-20">
                     {prizePool.length === 0 ? (
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
@@ -382,11 +371,6 @@ export default function Collection() {
                         />
                     )}
                 </div>
-
-                {/* Footer */}
-                <footer className="text-center text-sm text-gray-600 dark:text-gray-400 mt-auto transition-colors duration-300 opacity-0 animate-fade-in-up delay-700">
-                    <p className="pixel-text">Made with 💖 by <a href="https://github.com/Fluffy9" className="text-[#b480e4] dark:text-[#c99df0] pixel-text">Pupcakes</a></p>
-                </footer>
             </div>
         </main>
     )

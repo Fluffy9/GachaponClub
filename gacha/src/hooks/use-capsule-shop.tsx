@@ -1,3 +1,6 @@
+/**
+ * Home shop: Sui list prices plus Base `purchase` (exact wei). Opens the wallet popup if disconnected.
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useWallet } from '../components/providers/wallet-provider'
