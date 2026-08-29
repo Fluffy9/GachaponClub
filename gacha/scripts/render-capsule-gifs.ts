@@ -48,22 +48,46 @@ function startDevServer(): ChildProcess {
   })
 }
 
-function pngBufferToRgba(buffer: Buffer) {
+type RgbaFrame = { data: Uint8Array; width: number; height: number }
+
+function pngBufferToRgba(buffer: Buffer): RgbaFrame {
   const png = PNG.sync.read(buffer)
   return { data: png.data, width: png.width, height: png.height }
 }
 
-function encodeGif(frames: Array<{ data: Buffer; width: number; height: number }>) {
+function resolveTransparentIndex(palette: number[][]) {
+  let transparentIndex = palette.findIndex((color) => (color[3] ?? 255) === 0)
+  if (transparentIndex >= 0) return transparentIndex
+
+  palette.unshift([0, 0, 0, 0])
+  if (palette.length > 256) palette.pop()
+  return 0
+}
+
+function encodeGif(frames: RgbaFrame[]) {
+  const width = frames[0]!.width
+  const height = frames[0]!.height
+  const combined = new Uint8Array(width * height * frames.length * 4)
+
+  for (let i = 0; i < frames.length; i += 1) {
+    combined.set(frames[i]!.data, i * frames[i]!.data.length)
+  }
+
+  const palette = quantize(combined, 256, { format: 'rgba4444' })
+  const transparentIndex = resolveTransparentIndex(palette)
   const gif = GIFEncoder()
-  for (const frame of frames) {
-    const rgba = pngBufferToRgba(frame.data)
-    const palette = quantize(rgba.data, 256)
-    const index = applyPalette(rgba.data, palette)
-    gif.writeFrame(index, frame.width, frame.height, {
+
+  frames.forEach((frame, index) => {
+    const indices = applyPalette(frame.data, palette, 'rgba4444')
+    gif.writeFrame(indices, width, height, {
       palette,
       delay: CAPSULE_GIF_FRAME_MS,
+      transparent: true,
+      transparentIndex,
+      repeat: index === 0 ? 0 : undefined,
     })
-  }
+  })
+
   gif.finish()
   return Buffer.from(gif.bytes())
 }
@@ -84,30 +108,32 @@ async function captureCapsuleGif(type: CapsuleType) {
       await document.fonts.load('1.875rem "Press Start 2P"')
       await document.fonts.ready
     })
-    await sleep(500)
+    await page.waitForSelector('html[data-gif-loop-ready="true"]')
 
     const handle = await page.locator('[data-capsule-gif-root]').elementHandle()
     if (!handle) throw new Error(`Missing render root for ${type}`)
 
-    const frames: Array<{ data: Buffer; width: number; height: number }> = []
     const frameCount = Math.round((CAPSULE_GIF_LOOP_MS / 1000) * CAPSULE_GIF_FPS)
+    const rgbaFrames: RgbaFrame[] = []
+    const captureStart = Date.now()
 
     for (let i = 0; i < frameCount; i += 1) {
-      const shot = await handle.screenshot({ type: 'png' })
-      frames.push({ data: shot, width: 0, height: 0 })
-      await sleep(CAPSULE_GIF_FRAME_MS)
+      const targetMs = i * CAPSULE_GIF_FRAME_MS
+      const elapsed = Date.now() - captureStart
+      if (targetMs > elapsed) {
+        await sleep(targetMs - elapsed)
+      }
+
+      const shot = await handle.screenshot({ type: 'png', omitBackground: true })
+      rgbaFrames.push(pngBufferToRgba(shot))
     }
 
-    const first = pngBufferToRgba(frames[0]!.data)
-    const normalized = frames.map((frame) => {
-      const rgba = pngBufferToRgba(frame.data)
-      return { data: frame.data, width: rgba.width, height: rgba.height }
-    })
-
-    const gif = encodeGif(normalized)
+    const gif = encodeGif(rgbaFrames)
     const outPath = path.join(PUBLIC_DIR, `${type}.gif`)
     fs.writeFileSync(outPath, gif)
-    console.log(`Wrote ${outPath} (${first.width}x${first.height}, ${frameCount} frames @ ${CAPSULE_GIF_FPS}fps)`)
+    console.log(
+      `Wrote ${outPath} (${rgbaFrames[0]!.width}x${rgbaFrames[0]!.height}, ${frameCount} frames @ ${CAPSULE_GIF_FPS}fps, transparent)`,
+    )
   } finally {
     await browser.close()
   }

@@ -4,6 +4,8 @@ import { PixelSparkle } from './pixel-sparkle'
 import {
   bounceDelay,
   CAPSULE_COLORS,
+  CAPSULE_GIF_SIZE_CLASS,
+  CAPSULE_LOOP_S,
   CAPSULE_SIZE_CLASS,
   capsuleSparkles,
   type CapsuleType,
@@ -18,6 +20,7 @@ export function CapsuleArt({
   animationDelay = '0s',
   animate = true,
   animateBounce = true,
+  forGif = false,
   center,
 }: {
   type: CapsuleType
@@ -28,22 +31,34 @@ export function CapsuleArt({
   animationDelay?: string
   animate?: boolean
   animateBounce?: boolean
+  forGif?: boolean
   center?: ReactNode
 }) {
-  const sparkles = useMemo(() => capsuleSparkles(type, index), [type, index])
-  const delay = bounceDelay(type, row, col)
+  const sparkles = useMemo(
+    () => capsuleSparkles(type, index, forGif),
+    [type, index, forGif],
+  )
+  const delay = forGif ? 0 : bounceDelay(type, row, col)
+  const loopDuration = forGif ? CAPSULE_LOOP_S : 2
+  const resolvedSizeClass = forGif ? CAPSULE_GIF_SIZE_CLASS : sizeClass
 
   const bounceAnimation =
     animate && animateBounce
       ? {
           y: [0, -10, 0],
-          transition: {
-            duration: 2,
-            repeat: Infinity,
-            repeatType: 'reverse' as const,
-            ease: 'easeInOut',
-            delay,
-          },
+          transition: forGif
+            ? {
+                duration: CAPSULE_LOOP_S,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }
+            : {
+                duration: 2,
+                repeat: Infinity,
+                repeatType: 'reverse' as const,
+                ease: 'easeInOut',
+                delay,
+              },
         }
       : undefined
 
@@ -61,7 +76,7 @@ export function CapsuleArt({
       transition={
         animate
           ? {
-              duration: 2,
+              duration: loopDuration,
               repeat: Infinity,
               ease: 'easeInOut',
             }
@@ -74,7 +89,7 @@ export function CapsuleArt({
 
   return (
     <motion.div
-      className={`relative ${sizeClass}`}
+      className={`relative ${resolvedSizeClass}`}
       animate={bounceAnimation}
       data-capsule-art
     >
@@ -99,14 +114,18 @@ export function CapsuleArt({
 
       <motion.div
         className="absolute inset-0 flex items-center justify-center rounded-full"
-        initial={{ scale: 0.8, opacity: 0 }}
+        initial={forGif ? false : { scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{
-          type: 'spring',
-          stiffness: 300,
-          damping: 20,
-          delay: parseFloat(animationDelay),
-        }}
+        transition={
+          forGif
+            ? { duration: 0 }
+            : {
+                type: 'spring',
+                stiffness: 300,
+                damping: 20,
+                delay: parseFloat(animationDelay),
+              }
+        }
       >
         <motion.svg
           width="100%"

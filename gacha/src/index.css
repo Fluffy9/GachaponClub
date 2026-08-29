@@ -414,6 +414,35 @@ a {
   color: var(--sticker-hint);
 }
 
+/* GIF render page — card fills the canvas, square corners, no outer ring shadow. */
+body.capsule-gif-page,
+body.capsule-gif-page .capsule-gif-stage {
+  margin: 0;
+  padding: 0;
+  width: 152px;
+  height: 180px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.capsule-gif-stage {
+  display: flex;
+}
+
+.price-sticker--gif {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.price-sticker--gif .price-sticker-body {
+  flex: 1;
+  min-height: 0;
+}
+
 /* Question mark scales with capsule width, not page viewport (matches homepage ratios). */
 [data-capsule-art] {
   container-type: inline-size;
